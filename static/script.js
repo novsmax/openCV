@@ -55,7 +55,7 @@ async function fetchFilters() {
             filterCategory.appendChild(option);
         });
 
-        console.log('Фильтры успешно загружены');
+        console.log('Фильтры успешно загруженывввввввввввввввввввввввввввввв');
     } catch (error) {
         console.error('Ошибка при загрузке фильтров:', error);
         alert('Не удалось загрузить список фильтров. Пожалуйста, обновите страницу.');

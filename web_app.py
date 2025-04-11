@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from PIL import Image
+from typing import List, Dict, Union, Optional, Any
 
 
 import filters
@@ -803,6 +804,186 @@ async def get_api_stats(session_id: str = Depends(get_session_id)):
         return {
             "success": False,
             "error": str(e)
+        }
+
+
+# Модели данных для пресетов
+class PresetCreate(BaseModel):
+    """Модель для создания пресета"""
+    preset_name: str
+    filters_data: List[Dict[str, Any]]
+
+
+class PresetUpdate(BaseModel):
+    """Модель для обновления пресета"""
+    preset_name: Optional[str] = None
+    filters_data: Optional[List[Dict[str, Any]]] = None
+
+
+class PresetResponse(BaseModel):
+    """Модель ответа с данными пресета"""
+    success: bool
+    message: str
+    preset_id: Optional[str] = None
+    preset_name: Optional[str] = None
+    filters_data: Optional[List[Dict[str, Any]]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    usage_count: Optional[int] = None
+
+
+# API эндпоинты для работы с пресетами
+
+@app.get("/presets")
+async def get_presets(session_id: str = Depends(get_session_id)):
+    """Получает список пресетов пользователя"""
+    try:
+        presets = await stats_db.get_user_presets(session_id)
+        return {
+            "success": True,
+            "message": "Пресеты успешно получены",
+            "presets": presets
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении пресетов: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при получении пресетов: {str(e)}",
+            "presets": []
+        }
+
+
+@app.post("/presets", response_model=PresetResponse)
+async def create_preset(
+        preset_data: PresetCreate,
+        session_id: str = Depends(get_session_id)
+):
+    """Создает новый пресет"""
+    try:
+        preset_id = await stats_db.save_preset(
+            session_id,
+            preset_data.preset_name,
+            preset_data.filters_data
+        )
+
+        if preset_id:
+            return {
+                "success": True,
+                "message": "Пресет успешно создан",
+                "preset_id": preset_id,
+                "preset_name": preset_data.preset_name
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Не удалось создать пресет"
+            }
+    except Exception as e:
+        logger.error(f"Ошибка при создании пресета: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при создании пресета: {str(e)}"
+        }
+
+
+@app.get("/presets/{preset_id}", response_model=PresetResponse)
+async def get_preset(
+        preset_id: str,
+        session_id: str = Depends(get_session_id)
+):
+    """Получает пресет по ID"""
+    try:
+        preset = await stats_db.get_preset_by_id(preset_id)
+
+        if preset:
+            return {
+                "success": True,
+                "message": "Пресет успешно загружен",
+                "preset_id": preset["preset_id"],
+                "preset_name": preset["preset_name"],
+                "filters_data": preset["filters_data"],
+                "created_at": preset["created_at"],
+                "updated_at": preset["updated_at"],
+                "usage_count": preset["usage_count"]
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Пресет не найден"
+            }
+    except Exception as e:
+        logger.error(f"Ошибка при получении пресета: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при получении пресета: {str(e)}"
+        }
+
+
+@app.put("/presets/{preset_id}", response_model=PresetResponse)
+async def update_preset_endpoint(
+        preset_id: str,
+        preset_data: PresetUpdate,
+        session_id: str = Depends(get_session_id)
+):
+    """Обновляет пресет"""
+    try:
+        success = await stats_db.update_preset(
+            preset_id,
+            preset_data.preset_name,
+            preset_data.filters_data
+        )
+
+        if success:
+            # Получаем обновленные данные
+            updated_preset = await stats_db.get_preset_by_id(preset_id)
+
+            return {
+                "success": True,
+                "message": "Пресет успешно обновлен",
+                "preset_id": updated_preset["preset_id"],
+                "preset_name": updated_preset["preset_name"],
+                "filters_data": updated_preset["filters_data"],
+                "created_at": updated_preset["created_at"],
+                "updated_at": updated_preset["updated_at"],
+                "usage_count": updated_preset["usage_count"]
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Не удалось обновить пресет"
+            }
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении пресета: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при обновлении пресета: {str(e)}"
+        }
+
+
+@app.delete("/presets/{preset_id}")
+async def delete_preset_endpoint(
+        preset_id: str,
+        session_id: str = Depends(get_session_id)
+):
+    """Удаляет пресет"""
+    try:
+        success = await stats_db.delete_preset(preset_id)
+
+        if success:
+            return {
+                "success": True,
+                "message": "Пресет успешно удален"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Пресет не найден или не удалось его удалить"
+            }
+    except Exception as e:
+        logger.error(f"Ошибка при удалении пресета: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка при удалении пресета: {str(e)}"
         }
 
 

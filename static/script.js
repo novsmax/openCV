@@ -1,10 +1,11 @@
-
 let currentImageId = null;
 let originalImageData = null;
 let currentResultData = null;
 let appliedFilters = [];
 let allFilters = {};
 let sortableInstance = null;
+let presetsList = [];
+let currentPresetId = null;
 
 // DOM-элементы
 const dropArea = document.getElementById('dropArea');
@@ -29,11 +30,9 @@ const appliedFiltersContainer = document.getElementById('appliedFilters');
 const filterSelectionTitle = document.getElementById('filterSelectionTitle');
 
 // Инициализация приложения
-document.addEventListener('DOMContentLoaded', () => {
-    // Загрузка списка доступных фильтров
-    fetchFilters();
-
-    // Настройка обработчиков событий
+document.addEventListener('DOMContentLoaded', async () => {
+    await fetchFilters();
+    await fetchUserPresets();
     setupEventListeners();
 });
 
@@ -60,6 +59,50 @@ async function fetchFilters() {
     } catch (error) {
         console.error('Ошибка при загрузке фильтров:', error);
         alert('Не удалось загрузить список фильтров. Пожалуйста, обновите страницу.');
+    }
+}
+
+// Загрузка пресетов пользователя
+async function fetchUserPresets() {
+    try {
+        const response = await fetch('/presets');
+        if (!response.ok) {
+            throw new Error('Ошибка при загрузке пресетов');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            presetsList = data.presets;
+            updatePresetsDropdown();
+            console.log('Пресеты успешно загружены:', presetsList.length);
+        } else {
+            console.error('Ошибка при загрузке пресетов:', data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка при загрузке пресетов:', error);
+    }
+}
+
+// Обновление выпадающего списка пресетов
+function updatePresetsDropdown() {
+    const dropdown = document.getElementById('presetsDropdown');
+    if (!dropdown) return;
+
+    // Очистка списка
+    dropdown.innerHTML = '<option value="">Выберите пресет...</option>';
+
+    // Заполнение списка пресетами
+    presetsList.forEach(preset => {
+        const option = document.createElement('option');
+        option.value = preset.preset_id;
+        option.textContent = preset.preset_name;
+        dropdown.appendChild(option);
+    });
+
+    // Если в списке есть пресеты, показываем управляющие кнопки
+    const buttonsContainer = document.getElementById('presetButtonsContainer');
+    if (buttonsContainer) {
+        buttonsContainer.style.display = presetsList.length > 0 ? 'flex' : 'none';
     }
 }
 
@@ -93,6 +136,677 @@ function setupEventListeners() {
     downloadBtn.addEventListener('click', downloadResult);
     compareBtn.addEventListener('click', toggleCompareMode);
     clearFiltersBtn.addEventListener('click', clearAllFilters);
+
+    // Обработчики для пресетов
+    const presetsDropdown = document.getElementById('presetsDropdown');
+    const applyPresetBtn = document.getElementById('applyPresetBtn');
+    const savePresetBtn = document.getElementById('savePresetBtn');
+    const updatePresetBtn = document.getElementById('updatePresetBtn');
+    const deletePresetBtn = document.getElementById('deletePresetBtn');
+    const savePresetModalBtn = document.getElementById('savePresetModalBtn');
+    const closeModalBtns = document.getElementsByClassName('close-modal');
+
+
+    if (presetsDropdown) presetsDropdown.addEventListener('change', () => {
+        currentPresetId = presetsDropdown.value;
+    });
+
+    if (applyPresetBtn) applyPresetBtn.addEventListener('click', applyPreset);
+    if (savePresetBtn) {
+        savePresetBtn.addEventListener('click', openSavePresetDialog);
+        console.log('Обработчик сохранения привязан'); // Для отладки
+    } else {
+        console.error('Кнопка "Сохранить" не найдена!');
+    }
+    if (updatePresetBtn) updatePresetBtn.addEventListener('click', updateCurrentPreset);
+    if (deletePresetBtn) deletePresetBtn.addEventListener('click', deletePreset);
+    if (savePresetModalBtn) savePresetModalBtn.addEventListener('click', savePreset);
+
+    // Добавление обработчиков для закрытия модальных окон
+    for (let i = 0; i < closeModalBtns.length; i++) {
+        closeModalBtns[i].addEventListener('click', () => {
+            const modalId = closeModalBtns[i].getAttribute('data-modal');
+            closeModal(modalId);
+        });
+    }
+}
+
+
+// Обновление текущего пресета
+async function updateCurrentPreset() {
+    if (!currentPresetId) {
+        // Если пресет не выбран, предлагаем сохранить новый
+        openSavePresetDialog();
+        return;
+    }
+
+    // Если нет примененных фильтров, выходим
+    if (appliedFilters.length === 0) {
+        alert('Необходимо применить хотя бы один фильтр для обновления пресета');
+        return;
+    }
+
+    if (!confirm('Вы уверены, что хотите обновить текущий пресет?')) {
+        return;
+    }
+
+    try {
+        // Отображение индикатора обработки
+        processingContainer.style.display = 'block';
+        processingText.textContent = `Обновление пресета...`;
+
+        const response = await fetch(`/presets/${currentPresetId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filters_data: appliedFilters
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('Пресет успешно обновлен');
+
+            // Обновляем список пресетов
+            await fetchUserPresets();
+        } else {
+            alert('Ошибка при обновлении пресета: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка при обновлении пресета:', error);
+        alert('Ошибка при обновлении пресета');
+    } finally {
+        // Скрытие индикатора обработки
+        processingContainer.style.display = 'none';
+    }
+}
+
+// Закрытие модального окна
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Обработчик события при клике вне модального окна
+window.onclick = function(event) {
+    const modals = document.getElementsByClassName('modal');
+    for (let i = 0; i < modals.length; i++) {
+        if (event.target === modals[i]) {
+            modals[i].style.display = 'none';
+        }
+    }
+}
+
+// Последовательное применение фильтров из пресета
+async function applyPresetFilters(filters) {
+    processingText.textContent = `Применение фильтров пресета...`;
+
+    // Начинаем с исходного изображения
+    preview.src = originalImageData;
+    currentResultData = originalImageData;
+
+    // Последовательно применяем каждый фильтр
+    for (let i = 0; i < filters.length; i++) {
+        const filter = filters[i];
+
+        processingText.textContent = `Применение фильтра ${i+1} из ${filters.length}: ${filter.name}`;
+
+        // Отправка запроса на применение фильтра
+        const response = await fetch(`/apply_filter/${currentImageId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filter_name: filter.name,
+                filter_category: filter.category,
+                params: filter.params
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Обновление изображения
+            preview.src = data.image_data;
+            currentResultData = data.image_data;
+
+            // Добавление фильтра в список примененных
+            appliedFilters.push(filter);
+        } else {
+            alert('Ошибка при применении фильтра: ' + data.message);
+            break;
+        }
+    }
+
+    // Обновляем список примененных фильтров
+    updateAppliedFiltersList();
+
+    // Включение кнопок
+    downloadBtn.disabled = false;
+    compareBtn.disabled = false;
+    clearFiltersBtn.disabled = false;
+}
+
+// Удаление пресета
+async function deletePreset() {
+    const dropdown = document.getElementById('presetsDropdown');
+    const presetId = dropdown.value;
+
+    if (!presetId) {
+        alert('Пожалуйста, выберите пресет');
+        return;
+    }
+
+    if (!confirm('Вы уверены, что хотите удалить этот пресет?')) {
+        return;
+    }
+
+    try {
+        // Отображение индикатора обработки
+        processingContainer.style.display = 'block';
+        processingText.textContent = `Удаление пресета...`;
+
+        const response = await fetch(`/presets/${presetId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('Пресет успешно удален');
+
+            // Если удаляемый пресет был текущим, сбрасываем
+            if (currentPresetId === presetId) {
+                currentPresetId = null;
+            }
+
+            // Обновляем список пресетов
+            await fetchUserPresets();
+        } else {
+            alert('Ошибка при удалении пресета: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка при удалении пресета:', error);
+        alert('Ошибка при удалении пресета');
+    } finally {
+        // Скрытие индикатора обработки
+        processingContainer.style.display = 'none';
+    }
+}
+
+// Открытие диалога для сохранения нового пресета
+function openSavePresetDialog() {
+    console.log('Модальное окно открывается');
+    // Проверка, есть ли примененные фильтры
+    if (appliedFilters.length === 0) {
+        alert('Необходимо применить хотя бы один фильтр для создания пресета');
+        return;
+    }
+
+    // Создание и отображение модального окна
+    const modal = document.getElementById('savePresetModal');
+    const presetNameInput = document.getElementById('presetNameInput');
+    presetNameInput.value = `Пресет ${presetsList.length + 1}`;
+
+    // Отображение модального окна
+    modal.style.display = 'block';
+    presetNameInput.focus();
+    console.log('Модальное окно:', modal);
+}
+
+// Сохранение пресета
+async function savePreset() {
+    const presetNameInput = document.getElementById('presetNameInput');
+    const presetName = presetNameInput.value.trim();
+
+    if (!presetName) {
+        alert('Пожалуйста, введите название пресета');
+        return;
+    }
+
+    // Если нет примененных фильтров, выходим
+    if (appliedFilters.length === 0) {
+        alert('Необходимо применить хотя бы один фильтр для создания пресета');
+        return;
+    }
+
+    try {
+        // Отображение индикатора обработки
+        document.getElementById('savePresetModal').style.display = 'none';
+        processingContainer.style.display = 'block';
+        processingText.textContent = `Сохранение пресета: ${presetName}`;
+
+        const response = await fetch('/presets', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                preset_name: presetName,
+                filters_data: appliedFilters
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('Пресет успешно сохранен:', data.preset_id);
+            // Обновляем список пресетов
+            await fetchUserPresets();
+
+            // Выбираем только что созданный пресет в выпадающем списке
+            const dropdown = document.getElementById('presetsDropdown');
+            if (dropdown) {
+                dropdown.value = data.preset_id;
+                currentPresetId = data.preset_id;
+            }
+        } else {
+            alert('Ошибка при сохранении пресета: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка при сохранении пресета:', error);
+        alert('Ошибка при сохранении пресета');
+    } finally {
+        // Скрытие индикатора обработки
+        processingContainer.style.display = 'none';
+    }
+}
+
+// Применение выбранного пресета
+async function applyPreset() {
+    const dropdown = document.getElementById('presetsDropdown');
+    const presetId = dropdown.value;
+
+    if (!presetId) {
+        alert('Пожалуйста, выберите пресет');
+        return;
+    }
+
+    // Проверка наличия изображения
+    if (!currentImageId) {
+        alert('Сначала загрузите изображение');
+        return;
+    }
+
+    try {
+        // Отображение индикатора обработки
+        processingContainer.style.display = 'block';
+        processingText.textContent = `Загрузка пресета...`;
+
+        const response = await fetch(`/presets/${presetId}`);
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('Пресет успешно загружен:', data.preset_name);
+
+            // Сохраняем текущий пресет
+            currentPresetId = presetId;
+
+            // Сбрасываем текущие фильтры
+            appliedFilters = [];
+
+            // Последовательно применяем каждый фильтр из пресета
+            await applyPresetFilters(data.filters_data);
+
+        } else {
+            alert('Ошибка при загрузке пресета: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Ошибка при применении пресета:', error);
+        alert('Ошибка при применении пресета');
+    } finally {
+        // Скрытие индикатора обработки
+        processingContainer.style.display = 'none';
+    }
+}
+
+// Сброс изображения
+function resetImage() {
+    // Проверка
+    if (!currentImageId) {
+        return;
+    }
+
+    // Запрос подтверждения
+    if (!confirm('Вы уверены, что хотите сбросить изображение?')) {
+        return;
+    }
+
+    // Сброс режима редактирования
+    exitEditMode();
+
+    // Сброс текущего изображения
+    currentImageId = null;
+    originalImageData = null;
+    currentResultData = null;
+
+    // Сброс предпросмотра
+    preview.src = '/static/placeholder.jpg';
+    imageInfo.style.display = 'none';
+
+    // Отключение элементов управления
+    filterCategory.disabled = true;
+    filterName.disabled = true;
+    applyFilterBtn.disabled = true;
+    resetBtn.disabled = true;
+    downloadBtn.disabled = true;
+    compareBtn.disabled = true;
+    clearFiltersBtn.disabled = true;
+
+    // Сброс списка примененных фильтров
+    appliedFilters = [];
+    updateAppliedFiltersList();
+
+    // Сброс полей параметров
+    filterParams.innerHTML = '';
+
+    // Очистка выбранных значений
+    filterCategory.selectedIndex = 0;
+    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
+
+    console.log('Изображение сброшено');
+}
+
+// Скачивание результата
+function downloadResult() {
+    if (!currentResultData) {
+        alert('Нет результата для скачивания');
+        return;
+    }
+
+    // Создание ссылки для скачивания
+    const a = document.createElement('a');
+    a.href = currentResultData;
+    a.download = 'opencv_filters_result.jpg';
+    a.click();
+}
+
+// Переключение режима сравнения
+let compareMode = false;
+function toggleCompareMode() {
+    compareMode = !compareMode;
+
+    if (compareMode) {
+        // Включение режима сравнения
+        preview.src = originalImageData;
+        compareBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Показать результат';
+    } else {
+        // Выключение режима сравнения
+        preview.src = currentResultData;
+        compareBtn.innerHTML = '<i class="fas fa-columns me-2"></i>Сравнить';
+    }
+}
+
+// Очистка всех фильтров
+function clearAllFilters() {
+    // Проверка
+    if (appliedFilters.length === 0) {
+        return;
+    }
+
+    // Запрос подтверждения
+    if (!confirm('Вы уверены, что хотите удалить все примененные фильтры?')) {
+        return;
+    }
+
+    // Сброс режима редактирования
+    exitEditMode();
+
+    // Очистка списка фильтров
+    appliedFilters = [];
+    updateAppliedFiltersList();
+
+    // Возвращаем исходное изображение
+    preview.src = originalImageData;
+    currentResultData = originalImageData;
+
+    // Отключение кнопок
+    downloadBtn.disabled = true;
+    compareBtn.disabled = true;
+    clearFiltersBtn.disabled = true;
+
+    console.log('Все фильтры удалены');
+}
+
+// Удаление фильтра из списка
+function removeFilter(index) {
+    // Проверяем, не редактируется ли этот фильтр
+    if (applyFilterBtn.dataset.editIndex == index) {
+        exitEditMode();
+    }
+
+    // Удаление фильтра
+    appliedFilters.splice(index, 1);
+
+    // Обновление списка
+    updateAppliedFiltersList();
+
+    // Если фильтров не осталось, отключаем кнопки
+    if (appliedFilters.length === 0) {
+        downloadBtn.disabled = true;
+        compareBtn.disabled = true;
+        clearFiltersBtn.disabled = true;
+
+        // Возвращаем исходное изображение
+        preview.src = originalImageData;
+        currentResultData = originalImageData;
+    } else {
+        // Иначе применяем оставшиеся фильтры заново
+        reapplyFilters();
+    }
+}
+
+// Функция для редактирования фильтра
+function editFilter(index) {
+    // Получаем данные фильтра
+    const filter = appliedFilters[index];
+
+    // Обновляем заголовок секции
+    filterSelectionTitle.textContent = `Редактирование фильтра: ${filter.name}`;
+
+    // Устанавливаем категорию и название фильтра в формах выбора
+    filterCategory.value = filter.category;
+
+    // Обновляем список доступных фильтров в выбранной категории
+    handleCategoryChange();
+
+    // Устанавливаем название фильтра
+    filterName.value = filter.name;
+
+    // Создаем поля параметров
+    handleFilterChange();
+
+    // Устанавливаем значения параметров
+    if (filter.params) {
+        filter.params.forEach(param => {
+            const input = document.getElementById(`param_${param.name}`);
+            if (input) {
+                input.value = param.value;
+
+                // Обновляем отображение значения для ползунков
+                if (input.type === 'range') {
+                    const label = document.querySelector(`label[for="param_${param.name}"] span`);
+                    if (label) {
+                        label.textContent = param.value;
+                    }
+                }
+            }
+        });
+    }
+
+    // Изменяем текст кнопки
+    applyFilterBtn.innerHTML = '<i class="fas fa-save me-2"></i>Сохранить изменения';
+    applyFilterBtn.dataset.editIndex = index;
+
+    // Показываем кнопку отмены
+    cancelEditBtn.style.display = 'block';
+
+    // Прокручиваем страницу к форме редактирования
+    filterCategory.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Функция для выхода из режима редактирования
+function exitEditMode() {
+    // Восстанавливаем заголовок
+    filterSelectionTitle.textContent = 'Выбор фильтра';
+
+    // Восстанавливаем кнопку
+    applyFilterBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Применить фильтр';
+    delete applyFilterBtn.dataset.editIndex;
+
+    // Скрываем кнопку отмены
+    cancelEditBtn.style.display = 'none';
+
+    // Очищаем форму
+    filterCategory.selectedIndex = 0;
+    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
+    filterName.disabled = true;
+    filterParams.innerHTML = '';
+    applyFilterBtn.disabled = true;
+}
+
+// Функция для отмены редактирования
+function cancelEditing() {
+    exitEditMode();
+}
+
+// Повторное применение всех фильтров
+async function reapplyFilters() {
+    // Отображение индикатора обработки
+    processingContainer.style.display = 'block';
+    processingText.textContent = `Обновление фильтров...`;
+
+    try {
+        // Начинаем с исходного изображения
+        preview.src = originalImageData;
+        currentResultData = originalImageData;
+
+        // Последовательно применяем все фильтры
+        for (let i = 0; i < appliedFilters.length; i++) {
+            const filter = appliedFilters[i];
+
+            processingText.textContent = `Применение фильтра ${i+1} из ${appliedFilters.length}: ${filter.name}`;
+
+            // Отправка запроса на применение фильтра
+            const response = await fetch(`/apply_filter/${currentImageId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filter_name: filter.name,
+                    filter_category: filter.category,
+                    params: filter.params
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Обновление изображения
+                preview.src = data.image_data;
+                currentResultData = data.image_data;
+            } else {
+                alert('Ошибка при применении фильтра: ' + data.message);
+                break;
+            }
+        }
+
+        // Обновляем список примененных фильтров
+        updateAppliedFiltersList();
+    } catch (error) {
+        console.error('Ошибка при обновлении фильтров:', error);
+        alert('Ошибка при обновлении фильтров');
+    } finally {
+        // Скрытие индикатора обработки
+        processingContainer.style.display = 'none';
+    }
+}
+
+// Обновление списка примененных фильтров
+function updateAppliedFiltersList() {
+    // Очистка списка
+    appliedFiltersContainer.innerHTML = '';
+
+    // Если фильтров нет, отображаем сообщение
+    if (appliedFilters.length === 0) {
+        const message = document.createElement('p');
+        message.className = 'text-muted text-center';
+        message.textContent = 'Нет примененных фильтров';
+        appliedFiltersContainer.appendChild(message);
+        return;
+    }
+
+    // Создаем контейнер для фильтров, если его еще нет
+    let filterList = document.createElement('div');
+    filterList.className = 'filter-list';
+    appliedFiltersContainer.appendChild(filterList);
+
+    // Создание списка фильтров
+    appliedFilters.forEach((filter, index) => {
+        const filterItem = document.createElement('div');
+        filterItem.className = 'badge bg-primary p-2 me-2 mb-2 d-inline-flex align-items-center';
+        filterItem.setAttribute('data-index', index);
+        filterItem.style.cursor = 'grab';
+
+        // Добавляем значок для перетаскивания
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'me-1';
+        dragHandle.innerHTML = '<i class="fas fa-grip-lines-vertical"></i>';
+        filterItem.appendChild(dragHandle);
+
+        // Название фильтра и его редактирование
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'filter-name';
+        nameSpan.textContent = filter.name;
+        nameSpan.style.cursor = 'pointer';
+        nameSpan.addEventListener('click', () => editFilter(index));
+        filterItem.appendChild(nameSpan);
+
+        // Добавление кнопки удаления
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'ms-2 filter-action';
+        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Предотвращаем всплытие события
+            removeFilter(index);
+        });
+
+        filterItem.appendChild(removeBtn);
+        filterList.appendChild(filterItem);
+    });
+
+    // Инициализация Sortable для перетаскивания фильтров
+    if (appliedFilters.length > 0) {
+        if (sortableInstance) {
+            sortableInstance.destroy();
+        }
+
+        sortableInstance = new Sortable(filterList, {
+            animation: 150,
+            ghostClass: 'bg-secondary',
+            onEnd: function(evt) {
+                // Получаем новый индекс после перетаскивания
+                const oldIndex = evt.oldIndex;
+                const newIndex = evt.newIndex;
+
+                // Перемещаем фильтр в массиве
+                if (oldIndex !== newIndex) {
+                    const filterToMove = appliedFilters.splice(oldIndex, 1)[0];
+                    appliedFilters.splice(newIndex, 0, filterToMove);
+
+                    // Применяем фильтры заново
+                    reapplyFilters();
+                }
+            }
+        });
+    }
 }
 
 // Предотвращение действий по умолчанию для событий drag-and-drop
@@ -641,347 +1355,4 @@ async function applyFilter() {
         // Включение кнопки применения
         applyFilterBtn.disabled = false;
     }
-}
-
-// Обновление списка примененных фильтров
-function updateAppliedFiltersList() {
-    // Очистка списка
-    appliedFiltersContainer.innerHTML = '';
-
-    // Если фильтров нет, отображаем сообщение
-    if (appliedFilters.length === 0) {
-        const message = document.createElement('p');
-        message.className = 'text-muted text-center';
-        message.textContent = 'Нет примененных фильтров';
-        appliedFiltersContainer.appendChild(message);
-        return;
-    }
-
-    // Создаем контейнер для фильтров, если его еще нет
-    let filterList = document.createElement('div');
-    filterList.className = 'filter-list';
-    appliedFiltersContainer.appendChild(filterList);
-
-    // Создание списка фильтров
-    appliedFilters.forEach((filter, index) => {
-        const filterItem = document.createElement('div');
-        filterItem.className = 'badge bg-primary p-2 me-2 mb-2 d-inline-flex align-items-center';
-        filterItem.setAttribute('data-index', index);
-        filterItem.style.cursor = 'grab';
-
-        // Добавляем значок для перетаскивания
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'me-1';
-        dragHandle.innerHTML = '<i class="fas fa-grip-lines-vertical"></i>';
-        filterItem.appendChild(dragHandle);
-
-        // Название фильтра и его редактирование
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'filter-name';
-        nameSpan.textContent = filter.name;
-        nameSpan.style.cursor = 'pointer';
-        nameSpan.addEventListener('click', () => editFilter(index));
-        filterItem.appendChild(nameSpan);
-
-        // Добавление кнопки удаления
-        const removeBtn = document.createElement('span');
-        removeBtn.className = 'ms-2 filter-action';
-        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
-        removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Предотвращаем всплытие события
-            removeFilter(index);
-        });
-
-        filterItem.appendChild(removeBtn);
-        filterList.appendChild(filterItem);
-    });
-
-    // Инициализация Sortable для перетаскивания фильтров
-    if (appliedFilters.length > 0) {
-        if (sortableInstance) {
-            sortableInstance.destroy();
-        }
-
-        sortableInstance = new Sortable(filterList, {
-            animation: 150,
-            ghostClass: 'bg-secondary',
-            onEnd: function(evt) {
-                // Получаем новый индекс после перетаскивания
-                const oldIndex = evt.oldIndex;
-                const newIndex = evt.newIndex;
-
-                // Перемещаем фильтр в массиве
-                if (oldIndex !== newIndex) {
-                    const filterToMove = appliedFilters.splice(oldIndex, 1)[0];
-                    appliedFilters.splice(newIndex, 0, filterToMove);
-
-                    // Применяем фильтры заново
-                    reapplyFilters();
-                }
-            }
-        });
-    }
-}
-
-// Удаление фильтра из списка
-function removeFilter(index) {
-    // Проверяем, не редактируется ли этот фильтр
-    if (applyFilterBtn.dataset.editIndex == index) {
-        exitEditMode();
-    }
-
-    // Удаление фильтра
-    appliedFilters.splice(index, 1);
-
-    // Обновление списка
-    updateAppliedFiltersList();
-
-    // Если фильтров не осталось, отключаем кнопки
-    if (appliedFilters.length === 0) {
-        downloadBtn.disabled = true;
-        compareBtn.disabled = true;
-        clearFiltersBtn.disabled = true;
-
-        // Возвращаем исходное изображение
-        preview.src = originalImageData;
-        currentResultData = originalImageData;
-    } else {
-        // Иначе применяем оставшиеся фильтры заново
-        reapplyFilters();
-    }
-}
-
-// Функция для редактирования фильтра
-function editFilter(index) {
-    // Получаем данные фильтра
-    const filter = appliedFilters[index];
-
-    // Обновляем заголовок секции
-    filterSelectionTitle.textContent = `Редактирование фильтра: ${filter.name}`;
-
-    // Устанавливаем категорию и название фильтра в формах выбора
-    filterCategory.value = filter.category;
-
-    // Обновляем список доступных фильтров в выбранной категории
-    handleCategoryChange();
-
-    // Устанавливаем название фильтра
-    filterName.value = filter.name;
-
-    // Создаем поля параметров
-    handleFilterChange();
-
-    // Устанавливаем значения параметров
-    if (filter.params) {
-        filter.params.forEach(param => {
-            const input = document.getElementById(`param_${param.name}`);
-            if (input) {
-                input.value = param.value;
-
-                // Обновляем отображение значения для ползунков
-                if (input.type === 'range') {
-                    const label = document.querySelector(`label[for="param_${param.name}"] span`);
-                    if (label) {
-                        label.textContent = param.value;
-                    }
-                }
-            }
-        });
-    }
-
-    // Изменяем текст кнопки
-    applyFilterBtn.innerHTML = '<i class="fas fa-save me-2"></i>Сохранить изменения';
-    applyFilterBtn.dataset.editIndex = index;
-
-    // Показываем кнопку отмены
-    cancelEditBtn.style.display = 'block';
-
-    // Прокручиваем страницу к форме редактирования
-    filterCategory.scrollIntoView({ behavior: 'smooth' });
-}
-
-// Функция для выхода из режима редактирования
-function exitEditMode() {
-    // Восстанавливаем заголовок
-    filterSelectionTitle.textContent = 'Выбор фильтра';
-
-    // Восстанавливаем кнопку
-    applyFilterBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Применить фильтр';
-    delete applyFilterBtn.dataset.editIndex;
-
-    // Скрываем кнопку отмены
-    cancelEditBtn.style.display = 'none';
-
-    // Очищаем форму
-    filterCategory.selectedIndex = 0;
-    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
-    filterName.disabled = true;
-    filterParams.innerHTML = '';
-    applyFilterBtn.disabled = true;
-}
-
-// Функция для отмены редактирования
-function cancelEditing() {
-    exitEditMode();
-}
-
-// Повторное применение всех фильтров
-async function reapplyFilters() {
-    // Отображение индикатора обработки
-    processingContainer.style.display = 'block';
-    processingText.textContent = `Обновление фильтров...`;
-
-    try {
-        // Начинаем с исходного изображения
-        preview.src = originalImageData;
-        currentResultData = originalImageData;
-
-        // Последовательно применяем все фильтры
-        for (let i = 0; i < appliedFilters.length; i++) {
-            const filter = appliedFilters[i];
-
-            processingText.textContent = `Применение фильтра ${i+1} из ${appliedFilters.length}: ${filter.name}`;
-
-            // Отправка запроса на применение фильтра
-            const response = await fetch(`/apply_filter/${currentImageId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    filter_name: filter.name,
-                    filter_category: filter.category,
-                    params: filter.params
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                // Обновление изображения
-                preview.src = data.image_data;
-                currentResultData = data.image_data;
-            } else {
-                alert('Ошибка при применении фильтра: ' + data.message);
-                break;
-            }
-        }
-
-        // Обновляем список примененных фильтров
-        updateAppliedFiltersList();
-    } catch (error) {
-        console.error('Ошибка при обновлении фильтров:', error);
-        alert('Ошибка при обновлении фильтров');
-    } finally {
-        // Скрытие индикатора обработки
-        processingContainer.style.display = 'none';
-    }
-}
-
-// Сброс изображения
-function resetImage() {
-    // Проверка
-    if (!currentImageId) {
-        return;
-    }
-
-    // Запрос подтверждения
-    if (!confirm('Вы уверены, что хотите сбросить изображение?')) {
-        return;
-    }
-
-    // Сброс режима редактирования
-    exitEditMode();
-
-    // Сброс текущего изображения
-    currentImageId = null;
-    originalImageData = null;
-    currentResultData = null;
-
-    // Сброс предпросмотра
-    preview.src = '/static/placeholder.jpg';
-    imageInfo.style.display = 'none';
-
-    // Отключение элементов управления
-    filterCategory.disabled = true;
-    filterName.disabled = true;
-    applyFilterBtn.disabled = true;
-    resetBtn.disabled = true;
-    downloadBtn.disabled = true;
-    compareBtn.disabled = true;
-    clearFiltersBtn.disabled = true;
-
-    // Сброс списка примененных фильтров
-    appliedFilters = [];
-    updateAppliedFiltersList();
-
-    // Сброс полей параметров
-    filterParams.innerHTML = '';
-
-    // Очистка выбранных значений
-    filterCategory.selectedIndex = 0;
-    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
-
-    console.log('Изображение сброшено');
-}
-
-// Скачивание результата
-function downloadResult() {
-    if (!currentResultData) {
-        alert('Нет результата для скачивания');
-        return;
-    }
-
-    // Создание ссылки для скачивания
-    const a = document.createElement('a');
-    a.href = currentResultData;
-    a.download = 'opencv_filters_result.jpg';
-    a.click();
-}
-
-// Переключение режима сравнения
-let compareMode = false;
-function toggleCompareMode() {
-    compareMode = !compareMode;
-
-    if (compareMode) {
-        // Включение режима сравнения
-        preview.src = originalImageData;
-        compareBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Показать результат';
-    } else {
-        // Выключение режима сравнения
-        preview.src = currentResultData;
-        compareBtn.innerHTML = '<i class="fas fa-columns me-2"></i>Сравнить';
-    }
-}
-
-// Очистка всех фильтров
-function clearAllFilters() {
-    // Проверка
-    if (appliedFilters.length === 0) {
-        return;
-    }
-
-    // Запрос подтверждения
-    if (!confirm('Вы уверены, что хотите удалить все примененные фильтры?')) {
-        return;
-    }
-
-    // Сброс режима редактирования
-    exitEditMode();
-
-    // Очистка списка фильтров
-    appliedFilters = [];
-    updateAppliedFiltersList();
-
-    // Возвращаем исходное изображение
-    preview.src = originalImageData;
-    currentResultData = originalImageData;
-
-    // Отключение кнопок
-    downloadBtn.disabled = true;
-    compareBtn.disabled = true;
-    clearFiltersBtn.disabled = true;
-
-    console.log('Все фильтры удалены');
 }

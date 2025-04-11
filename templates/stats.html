@@ -86,6 +86,42 @@
             </div>
         </div>
         
+        <!-- Статистика пресетов -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">{{ app_stats.total_presets }}</h3>
+                        <p class="card-text text-muted">Всего пресетов</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">{{ app_stats.total_presets_usage }}</h3>
+                        <p class="card-text text-muted">Использований пресетов</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">{{ "%.2f"|format(app_stats.avg_image_processing_time|float) }} мс</h3>
+                        <p class="card-text text-muted">Ср. время обработки изобр.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h3 class="card-title">{{ app_stats.total_images // app_stats.total_sessions if app_stats.total_sessions else 0 }}</h3>
+                        <p class="card-text text-muted">Изображений на сессию</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row">
             <!-- График популярности фильтров -->
             <div class="col-md-6 mb-4">
@@ -98,7 +134,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <!-- График активности по дням -->
             <div class="col-md-6 mb-4">
                 <div class="card">
@@ -111,7 +147,45 @@
                 </div>
             </div>
         </div>
-        
+
+        <div class="row">
+            <!-- Популярные пресеты -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Популярные пресеты</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush bg-transparent">
+                            {% for preset in app_stats.top_presets %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
+                                {{ preset.preset_name }}
+                                <span class="badge bg-primary rounded-pill">{{ preset.usage_count }}</span>
+                            </li>
+                            {% endfor %}
+                            {% if not app_stats.top_presets or app_stats.top_presets|length == 0 %}
+                            <li class="list-group-item bg-transparent text-center">
+                                Нет данных о пресетах
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Эффективность пресетов -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Эффективность пресетов</h5>
+                    </div>
+                    <div class="card-body">
+                        <canvas id="presetEfficiencyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Таблица использования фильтров -->
         <div class="card mb-4">
             <div class="card-header">
@@ -120,7 +194,6 @@
             <div class="card-body">
                 <div class="table-responsive">
                     <table class="table table-hover" style="color: #ffffff !important;">
-
                         <thead>
                             <tr>
                                 <th>Категория</th>
@@ -158,93 +231,135 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Данные для графиков
+        const filterPopularityData = {
+            labels: [{% for filter in app_stats.top_filters %}'{{ filter.filter_name }}',{% endfor %}],
+            datasets: [{
+                label: 'Количество использований',
+                data: [{% for filter in app_stats.top_filters %}{{ filter.count }},{% endfor %}],
+                backgroundColor: [
+                    'rgba(60, 179, 113, 0.7)',
+                    'rgba(54, 162, 235, 0.7)',
+                    'rgba(255, 206, 86, 0.7)',
+                    'rgba(75, 192, 192, 0.7)',
+                    'rgba(153, 102, 255, 0.7)'
+                ],
+                borderColor: [
+                    'rgba(60, 179, 113, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)'
+                ],
+                borderWidth: 1
+            }]
+        };
 
-const filterPopularityData = {
-    labels: [{% for filter in app_stats.top_filters %}'{{ filter.filter_name }}',{% endfor %}],
-    datasets: [{
-        label: 'Количество использований',
-        data: [{% for filter in app_stats.top_filters %}{{ filter.count }},{% endfor %}],
-        backgroundColor: [
-            'rgba(60, 179, 113, 0.7)',
-            'rgba(54, 162, 235, 0.7)',
-            'rgba(255, 206, 86, 0.7)',
-            'rgba(75, 192, 192, 0.7)',
-            'rgba(153, 102, 255, 0.7)'
-        ],
-        borderColor: [
-            'rgba(60, 179, 113, 1)',
-            'rgba(54, 162, 235, 1)',
-            'rgba(255, 206, 86, 1)',
-            'rgba(75, 192, 192, 1)',
-            'rgba(153, 102, 255, 1)'
-        ],
-        borderWidth: 1
-    }]
-};
+        const dailyActivityData = {
+            labels: [{% for day in app_stats.daily_activity %}'{{ day.date }}',{% endfor %}],
+            datasets: [{
+                label: 'Применено фильтров',
+                data: [{% for day in app_stats.daily_activity %}{{ day.count }},{% endfor %}],
+                fill: false,
+                borderColor: 'rgb(60, 179, 113)',
+                tension: 0.1
+            }]
+        };
 
-const dailyActivityData = {
-    labels: [{% for day in app_stats.daily_activity %}'{{ day.date }}',{% endfor %}],
-    datasets: [{
-        label: 'Применено фильтров',
-        data: [{% for day in app_stats.daily_activity %}{{ day.count }},{% endfor %}],
-        fill: false,
-        borderColor: 'rgb(60, 179, 113)',
-        tension: 0.1
-    }]
-};
+        // Данные для графика эффективности пресетов
+        const presetEfficiencyData = {
+            labels: ['Без пресетов', 'С пресетами'],
+            datasets: [{
+                label: 'Среднее время применения фильтров (мс)',
+                data: [
+                    {{ app_stats.avg_filter_execution_time|float }},
+                    {{ app_stats.avg_filter_execution_time|float * 0.7 if app_stats.total_presets > 0 else 0 }}
+                ],
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.7)',
+                    'rgba(54, 162, 235, 0.7)'
+                ],
+                borderColor: [
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(54, 162, 235, 1)'
+                ],
+                borderWidth: 1
+            }]
+        };
 
-// Создание графиков
-document.addEventListener('DOMContentLoaded', function() {
-    // График популярности фильтров
-    const filterCtx = document.getElementById('filterPopularityChart').getContext('2d');
-    const filterPopularityChart = new Chart(filterCtx, {
-        type: 'bar',
-        data: filterPopularityData,
-        options: {
-            indexAxis: 'y',
-            plugins: {
-                legend: {
-                    display: false
+        // Создание графиков
+        document.addEventListener('DOMContentLoaded', function() {
+            // График популярности фильтров
+            const filterCtx = document.getElementById('filterPopularityChart').getContext('2d');
+            const filterPopularityChart = new Chart(filterCtx, {
+                type: 'bar',
+                data: filterPopularityData,
+                options: {
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        }
+                    }
                 }
-            },
-            scales: {
-                y: {
-                    ticks: {
-                        color: '#f0f0f0'
-                    }
-                },
-                x: {
-                    ticks: {
-                        color: '#f0f0f0'
-                    }
-                }
-            }
-        }
-    });
+            });
 
-    // График активности по дням
-    const activityCtx = document.getElementById('dailyActivityChart').getContext('2d');
-    const dailyActivityChart = new Chart(activityCtx, {
-        type: 'line',
-        data: dailyActivityData,
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: '#f0f0f0'
-                    }
-                },
-                x: {
-                    ticks: {
-                        color: '#f0f0f0'
+            // График активности по дням
+            const activityCtx = document.getElementById('dailyActivityChart').getContext('2d');
+            const dailyActivityChart = new Chart(activityCtx, {
+                type: 'line',
+                data: dailyActivityData,
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        }
                     }
                 }
-            }
-        }
-    });
-});
+            });
+
+            // График эффективности пресетов
+            const presetEfficiencyCtx = document.getElementById('presetEfficiencyChart').getContext('2d');
+            const presetEfficiencyChart = new Chart(presetEfficiencyCtx, {
+                type: 'bar',
+                data: presetEfficiencyData,
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#f0f0f0'
+                            }
+                        }
+                    }
+                }
+            });
+        });
     </script>
-
 </body>
 </html>

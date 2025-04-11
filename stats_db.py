@@ -358,23 +358,10 @@ async def get_app_stats():
 
 
 # Функции для работы с пресетами
-
-async def save_preset(session_id, preset_name, filters_data):
-    """
-    Сохраняет пресет фильтров.
-
-    Args:
-        session_id: ID сессии
-        preset_name: Название пресета
-        filters_data: Данные о фильтрах в формате JSON
-
-    Returns:
-        str: ID сохраненного пресета
-    """
+async def save_preset(preset_name, filters_data):
     try:
         preset_id = str(uuid.uuid4())
 
-        # Преобразуем данные о фильтрах в JSON-строку
         if isinstance(filters_data, (dict, list)):
             filters_json = json.dumps(filters_data)
         else:
@@ -389,8 +376,7 @@ async def save_preset(session_id, preset_name, filters_data):
             )
             await db.commit()
 
-            # Логируем событие
-            await log_app_event("preset_created", session_id, f"Пресет '{preset_name}' создан")
+            await log_app_event("preset_created", f"Пресет '{preset_name}' создан")
 
             logger.info(f"Пресет '{preset_name}' успешно сохранен с ID: {preset_id}")
             return preset_id

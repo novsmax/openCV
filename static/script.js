@@ -46,7 +46,6 @@ async function fetchFilters() {
 
         allFilters = await response.json();
 
-        // Заполняем выпадающий список категорий
         filterCategory.innerHTML = '<option value="">Выберите категорию...</option>';
         Object.keys(allFilters).forEach(category => {
             const option = document.createElement('option');
@@ -83,15 +82,12 @@ async function fetchUserPresets() {
     }
 }
 
-// Обновление выпадающего списка пресетов
 function updatePresetsDropdown() {
     const dropdown = document.getElementById('presetsDropdown');
     if (!dropdown) return;
 
-    // Очистка списка
     dropdown.innerHTML = '<option value="">Выберите пресет...</option>';
 
-    // Заполнение списка пресетами
     presetsList.forEach(preset => {
         const option = document.createElement('option');
         option.value = preset.preset_id;
@@ -99,7 +95,6 @@ function updatePresetsDropdown() {
         dropdown.appendChild(option);
     });
 
-    // Если в списке есть пресеты, показываем управляющие кнопки
     const buttonsContainer = document.getElementById('presetButtonsContainer');
     if (buttonsContainer) {
         buttonsContainer.style.display = presetsList.length > 0 ? 'flex' : 'none';
@@ -175,12 +170,9 @@ function setupEventListeners() {
 // Обновление текущего пресета
 async function updateCurrentPreset() {
     if (!currentPresetId) {
-        // Если пресет не выбран, предлагаем сохранить новый
         openSavePresetDialog();
         return;
     }
-
-    // Если нет примененных фильтров, выходим
     if (appliedFilters.length === 0) {
         alert('Необходимо применить хотя бы один фильтр для обновления пресета');
         return;
@@ -191,7 +183,6 @@ async function updateCurrentPreset() {
     }
 
     try {
-        // Отображение индикатора обработки
         processingContainer.style.display = 'block';
         processingText.textContent = `Обновление пресета...`;
 
@@ -210,7 +201,6 @@ async function updateCurrentPreset() {
         if (data.success) {
             console.log('Пресет успешно обновлен');
 
-            // Обновляем список пресетов
             await fetchUserPresets();
         } else {
             alert('Ошибка при обновлении пресета: ' + data.message);
@@ -219,12 +209,10 @@ async function updateCurrentPreset() {
         console.error('Ошибка при обновлении пресета:', error);
         alert('Ошибка при обновлении пресета');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
     }
 }
 
-// Закрытие модального окна
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
@@ -232,7 +220,6 @@ function closeModal(modalId) {
     }
 }
 
-// Обработчик события при клике вне модального окна
 window.onclick = function(event) {
     const modals = document.getElementsByClassName('modal');
     for (let i = 0; i < modals.length; i++) {
@@ -242,21 +229,17 @@ window.onclick = function(event) {
     }
 }
 
-// Последовательное применение фильтров из пресета
 async function applyPresetFilters(filters) {
     processingText.textContent = `Применение фильтров пресета...`;
 
-    // Начинаем с исходного изображения
     preview.src = originalImageData;
     currentResultData = originalImageData;
 
-    // Последовательно применяем каждый фильтр
     for (let i = 0; i < filters.length; i++) {
         const filter = filters[i];
 
         processingText.textContent = `Применение фильтра ${i+1} из ${filters.length}: ${filter.name}`;
 
-        // Отправка запроса на применение фильтра
         const response = await fetch(`/apply_filter/${currentImageId}`, {
             method: 'POST',
             headers: {
@@ -272,11 +255,9 @@ async function applyPresetFilters(filters) {
         const data = await response.json();
 
         if (data.success) {
-            // Обновление изображения
             preview.src = data.image_data;
             currentResultData = data.image_data;
 
-            // Добавление фильтра в список примененных
             appliedFilters.push(filter);
         } else {
             alert('Ошибка при применении фильтра: ' + data.message);
@@ -284,10 +265,8 @@ async function applyPresetFilters(filters) {
         }
     }
 
-    // Обновляем список примененных фильтров
     updateAppliedFiltersList();
 
-    // Включение кнопок
     downloadBtn.disabled = false;
     compareBtn.disabled = false;
     clearFiltersBtn.disabled = false;
@@ -308,7 +287,6 @@ async function deletePreset() {
     }
 
     try {
-        // Отображение индикатора обработки
         processingContainer.style.display = 'block';
         processingText.textContent = `Удаление пресета...`;
 
@@ -321,12 +299,10 @@ async function deletePreset() {
         if (data.success) {
             console.log('Пресет успешно удален');
 
-            // Если удаляемый пресет был текущим, сбрасываем
             if (currentPresetId === presetId) {
                 currentPresetId = null;
             }
 
-            // Обновляем список пресетов
             await fetchUserPresets();
         } else {
             alert('Ошибка при удалении пресета: ' + data.message);
@@ -335,26 +311,21 @@ async function deletePreset() {
         console.error('Ошибка при удалении пресета:', error);
         alert('Ошибка при удалении пресета');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
     }
 }
 
-// Открытие диалога для сохранения нового пресета
 function openSavePresetDialog() {
     console.log('Модальное окно открывается');
-    // Проверка, есть ли примененные фильтры
     if (appliedFilters.length === 0) {
         alert('Необходимо применить хотя бы один фильтр для создания пресета');
         return;
     }
 
-    // Создание и отображение модального окна
     const modal = document.getElementById('savePresetModal');
     const presetNameInput = document.getElementById('presetNameInput');
     presetNameInput.value = `Пресет ${presetsList.length + 1}`;
 
-    // Отображение модального окна
     modal.style.display = 'block';
     presetNameInput.focus();
     console.log('Модальное окно:', modal);
@@ -370,14 +341,12 @@ async function savePreset() {
         return;
     }
 
-    // Если нет примененных фильтров, выходим
     if (appliedFilters.length === 0) {
         alert('Необходимо применить хотя бы один фильтр для создания пресета');
         return;
     }
 
     try {
-        // Отображение индикатора обработки
         document.getElementById('savePresetModal').style.display = 'none';
         processingContainer.style.display = 'block';
         processingText.textContent = `Сохранение пресета: ${presetName}`;
@@ -392,15 +361,13 @@ async function savePreset() {
                 filters_data: appliedFilters
             })
         });
-
+        console.log(response);
         const data = await response.json();
 
         if (data.success) {
             console.log('Пресет успешно сохранен:', data.preset_id);
-            // Обновляем список пресетов
             await fetchUserPresets();
 
-            // Выбираем только что созданный пресет в выпадающем списке
             const dropdown = document.getElementById('presetsDropdown');
             if (dropdown) {
                 dropdown.value = data.preset_id;
@@ -413,7 +380,6 @@ async function savePreset() {
         console.error('Ошибка при сохранении пресета:', error);
         alert('Ошибка при сохранении пресета');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
     }
 }
@@ -428,14 +394,12 @@ async function applyPreset() {
         return;
     }
 
-    // Проверка наличия изображения
     if (!currentImageId) {
         alert('Сначала загрузите изображение');
         return;
     }
 
     try {
-        // Отображение индикатора обработки
         processingContainer.style.display = 'block';
         processingText.textContent = `Загрузка пресета...`;
 
@@ -445,13 +409,8 @@ async function applyPreset() {
         if (data.success) {
             console.log('Пресет успешно загружен:', data.preset_name);
 
-            // Сохраняем текущий пресет
             currentPresetId = presetId;
-
-            // Сбрасываем текущие фильтры
             appliedFilters = [];
-
-            // Последовательно применяем каждый фильтр из пресета
             await applyPresetFilters(data.filters_data);
 
         } else {
@@ -461,7 +420,6 @@ async function applyPreset() {
         console.error('Ошибка при применении пресета:', error);
         alert('Ошибка при применении пресета');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
     }
 }

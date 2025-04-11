@@ -74,7 +74,6 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS filter_presets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 preset_id TEXT UNIQUE NOT NULL,
-                session_id TEXT,
                 preset_name TEXT NOT NULL,
                 filters_data TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -384,9 +383,9 @@ async def save_preset(session_id, preset_name, filters_data):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 """INSERT INTO filter_presets 
-                (preset_id, session_id, preset_name, filters_data, created_at, updated_at) 
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-                (preset_id, session_id, preset_name, filters_json)
+                (preset_id, preset_name, filters_data, created_at, updated_at) 
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+                (preset_id, preset_name, filters_json)
             )
             await db.commit()
 
@@ -400,31 +399,19 @@ async def save_preset(session_id, preset_name, filters_data):
         return None
 
 
-async def get_user_presets(session_id):
-    """
-    Получает список пресетов пользователя.
-
-    Args:
-        session_id: ID сессии
-
-    Returns:
-        list: Список пресетов пользователя
-    """
+async def get_all_presets():
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
                     """SELECT preset_id, preset_name, filters_data, created_at, updated_at, usage_count
                     FROM filter_presets 
-                    WHERE session_id = ? 
                     ORDER BY updated_at DESC""",
-                    (session_id,)
             ) as cursor:
                 rows = await cursor.fetchall()
                 presets = []
                 for row in rows:
                     preset = dict(row)
-                    # Преобразуем JSON-строку обратно в объект
                     preset['filters_data'] = json.loads(preset['filters_data'])
                     presets.append(preset)
                 return presets
@@ -434,15 +421,6 @@ async def get_user_presets(session_id):
 
 
 async def get_preset_by_id(preset_id):
-    """
-    Получает пресет по его ID.
-
-    Args:
-        preset_id: ID пресета
-
-    Returns:
-        dict: Данные пресета
-    """
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -479,20 +457,8 @@ async def get_preset_by_id(preset_id):
 
 
 async def update_preset(preset_id, preset_name=None, filters_data=None):
-    """
-    Обновляет пресет.
-
-    Args:
-        preset_id: ID пресета
-        preset_name: Новое название пресета (опционально)
-        filters_data: Новые данные о фильтрах (опционально)
-
-    Returns:
-        bool: Успешно ли выполнено обновление
-    """
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            # Получаем текущие данные пресета
             db.row_factory = aiosqlite.Row
             async with db.execute(
                     "SELECT preset_name, filters_data, session_id FROM filter_presets WHERE preset_id = ?",
@@ -504,7 +470,6 @@ async def update_preset(preset_id, preset_name=None, filters_data=None):
                 logger.warning(f"Пресет с ID {preset_id} не найден для обновления")
                 return False
 
-            # Подготавливаем данные для обновления
             new_name = preset_name if preset_name is not None else preset['preset_name']
 
             if filters_data is not None:
@@ -515,7 +480,6 @@ async def update_preset(preset_id, preset_name=None, filters_data=None):
             else:
                 new_filters = preset['filters_data']
 
-            # Обновляем пресет
             await db.execute(
                 """UPDATE filter_presets 
                 SET preset_name = ?, filters_data = ?, updated_at = CURRENT_TIMESTAMP 
@@ -524,7 +488,6 @@ async def update_preset(preset_id, preset_name=None, filters_data=None):
             )
             await db.commit()
 
-            # Логируем событие
             await log_app_event("preset_updated", preset['session_id'], f"Пресет '{new_name}' обновлен")
 
             logger.info(f"Пресет с ID {preset_id} успешно обновлен")
@@ -535,18 +498,8 @@ async def update_preset(preset_id, preset_name=None, filters_data=None):
 
 
 async def delete_preset(preset_id):
-    """
-    Удаляет пресет.
-
-    Args:
-        preset_id: ID пресета
-
-    Returns:
-        bool: Успешно ли выполнено удаление
-    """
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            # Получаем информацию о пресете перед удалением (для лога)
             db.row_factory = aiosqlite.Row
             async with db.execute(
                     "SELECT preset_name, session_id FROM filter_presets WHERE preset_id = ?",
@@ -558,11 +511,9 @@ async def delete_preset(preset_id):
                 logger.warning(f"Пресет с ID {preset_id} не найден для удаления")
                 return False
 
-            # Удаляем пресет
             await db.execute("DELETE FROM filter_presets WHERE preset_id = ?", (preset_id,))
             await db.commit()
 
-            # Логируем событие
             await log_app_event("preset_deleted", preset['session_id'], f"Пресет '{preset['preset_name']}' удален")
 
             logger.info(f"Пресет с ID {preset_id} успешно удален")
@@ -573,15 +524,6 @@ async def delete_preset(preset_id):
 
 
 async def get_popular_presets(limit=5):
-    """
-    Получает список самых популярных пресетов.
-
-    Args:
-        limit: Количество пресетов для возврата
-
-    Returns:
-        list: Список популярных пресетов
-    """
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row

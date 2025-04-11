@@ -836,9 +836,8 @@ class PresetResponse(BaseModel):
 
 @app.get("/presets")
 async def get_presets(session_id: str = Depends(get_session_id)):
-    """Получает список пресетов пользователя"""
     try:
-        presets = await stats_db.get_user_presets(session_id)
+        presets = await stats_db.get_all_presets()
         return {
             "success": True,
             "message": "Пресеты успешно получены",
@@ -854,14 +853,10 @@ async def get_presets(session_id: str = Depends(get_session_id)):
 
 
 @app.post("/presets", response_model=PresetResponse)
-async def create_preset(
-        preset_data: PresetCreate,
-        session_id: str = Depends(get_session_id)
-):
+async def create_preset(preset_data: PresetCreate):
     """Создает новый пресет"""
     try:
         preset_id = await stats_db.save_preset(
-            session_id,
             preset_data.preset_name,
             preset_data.filters_data
         )

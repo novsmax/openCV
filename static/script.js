@@ -6,14 +6,22 @@ let allFilters = {};
 let sortableInstance = null;
 let presetsList = [];
 let currentPresetId = null;
+let uploadedImages = []; // Массив со всеми загруженными изображениями { id, originalData, resultData, fileName, ... }
+let currentImageIndex = 0;
+
 
 // DOM-элементы
+const archiveBtn = document.getElementById('downloadArchiveBtn');
 const dropArea = document.getElementById('dropArea');
 const fileInput = document.getElementById('fileInput');
 const uploadProgress = document.getElementById('uploadProgress');
 const progressBar = uploadProgress.querySelector('.progress-bar');
+const uploadStatus = document.getElementById('uploadStatus');
+const uploadedCountEl = document.getElementById('uploadedCount');
+const totalCountEl = document.getElementById('totalCount');
 const preview = document.getElementById('preview');
 const imageInfo = document.getElementById('imageInfo');
+const thumbnailsContainer = document.getElementById('thumbnailsContainer');
 const filterCategory = document.getElementById('filterCategory');
 const filterName = document.getElementById('filterName');
 const filterParams = document.getElementById('filterParams');
@@ -26,6 +34,10 @@ const compareBtn = document.getElementById('compareBtn');
 const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 const processingContainer = document.getElementById('processingContainer');
 const processingText = document.getElementById('processingText');
+const batchProgressBar = document.getElementById('batchProgressBar');
+const batchProgress = document.getElementById('batchProgress');
+const processedCountEl = document.getElementById('processedCount');
+const totalImagesEl = document.getElementById('totalImages');
 const appliedFiltersContainer = document.getElementById('appliedFilters');
 const filterSelectionTitle = document.getElementById('filterSelectionTitle');
 
@@ -131,6 +143,7 @@ function setupEventListeners() {
     downloadBtn.addEventListener('click', downloadResult);
     compareBtn.addEventListener('click', toggleCompareMode);
     clearFiltersBtn.addEventListener('click', clearAllFilters);
+    archiveBtn.addEventListener('click', handleArchiveDownload);
 
     // Обработчики для пресетов
     const presetsDropdown = document.getElementById('presetsDropdown');
@@ -412,6 +425,7 @@ async function applyPreset() {
             currentPresetId = presetId;
             appliedFilters = [];
             await applyPresetFilters(data.filters_data);
+            updateArchiveButton();
 
         } else {
             alert('Ошибка при загрузке пресета: ' + data.message);
@@ -425,54 +439,62 @@ async function applyPreset() {
 }
 
 // Сброс изображения
-function resetImage() {
-    // Проверка
-    if (!currentImageId) {
-        return;
-    }
+function clearAllFilters() {
+    if (!confirm('Вы уверены, что хотите полностью сбросить ВСЕ изображения?')) return;
 
-    // Запрос подтверждения
-    if (!confirm('Вы уверены, что хотите сбросить изображение?')) {
-        return;
-    }
-
-    // Сброс режима редактирования
-    exitEditMode();
-
-    // Сброс текущего изображения
+    // 1. Полный сброс всех данных
+    uploadedImages = [];
     currentImageId = null;
     originalImageData = null;
     currentResultData = null;
+    appliedFilters = [];
+    currentImageIndex = 0;
 
-    // Сброс предпросмотра
+    // 2. Сброс DOM-элементов
     preview.src = '/static/placeholder.jpg';
     imageInfo.style.display = 'none';
 
-    // Отключение элементов управления
-    filterCategory.disabled = true;
-    filterName.disabled = true;
-    applyFilterBtn.disabled = true;
-    resetBtn.disabled = true;
+    // Сброс контейнера миниатюр
+    if (thumbnailsContainer) {
+        thumbnailsContainer.innerHTML = `
+            <div class="text-center text-muted p-2">
+                <i class="fas fa-images fa-2x mb-2"></i><br>
+                Загрузите изображения
+            </div>
+        `;
+        thumbnailsContainer.style.display = 'none';
+    }
+
+    // Изменяем класс контейнера основного изображения
+    const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    if (imagePreviewContainer) {
+        imagePreviewContainer.classList.remove('col-md-9');
+        imagePreviewContainer.classList.add('col-12');
+    }
+
+    // 3. Сброс элементов управления
+    filterCategory.selectedIndex = 0;
+    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
+    filterParams.innerHTML = '';
+
+    updateAppliedFiltersList();
+    updateArchiveButton();
+
     downloadBtn.disabled = true;
     compareBtn.disabled = true;
     clearFiltersBtn.disabled = true;
 
-    // Сброс списка примененных фильтров
-    appliedFilters = [];
-    updateAppliedFiltersList();
+    // 4. Принудительная очистка кэша
+    URL.revokeObjectURL(preview.src);
+    document.querySelectorAll('.thumbnail img').forEach(img => {
+        URL.revokeObjectURL(img.src);
+    });
 
-    // Сброс полей параметров
-    filterParams.innerHTML = '';
-
-    // Очистка выбранных значений
-    filterCategory.selectedIndex = 0;
-    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
-
-    console.log('Изображение сброшено');
+    console.log('Полный сброс: все изображения и миниатюры удалены');
 }
 
 // Скачивание результата
-function downloadResult() {
+async function downloadResult() {
     if (!currentResultData) {
         alert('Нет результата для скачивания');
         return;
@@ -538,7 +560,8 @@ function removeFilter(index) {
     if (applyFilterBtn.dataset.editIndex == index) {
         exitEditMode();
     }
-
+    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+    uploadedImages[currentImageIndex].resultData = currentResultData;
     // Удаление фильтра
     appliedFilters.splice(index, 1);
 
@@ -670,6 +693,8 @@ async function reapplyFilters() {
                 // Обновление изображения
                 preview.src = data.image_data;
                 currentResultData = data.image_data;
+                uploadedImages[currentImageIndex].resultData = currentResultData;
+                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
             } else {
                 alert('Ошибка при применении фильтра: ' + data.message);
                 break;
@@ -754,6 +779,9 @@ function updateAppliedFiltersList() {
                 const oldIndex = evt.oldIndex;
                 const newIndex = evt.newIndex;
 
+                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+                uploadedImages[currentImageIndex].resultData = currentResultData;
+
                 // Перемещаем фильтр в массиве
                 if (oldIndex !== newIndex) {
                     const filterToMove = appliedFilters.splice(oldIndex, 1)[0];
@@ -789,95 +817,144 @@ function handleDrop(e) {
     const files = dt.files;
 
     if (files.length > 0) {
-        handleFile(files[0]);
+        handleFiles(files);
     }
 }
 
 // Обработка выбора файла через диалоговое окно
 function handleFileSelect(e) {
+    console.log('handleFileSelect вызван', e);
     const files = e.target.files;
+    console.log('Выбрано файлов:', files?.length);
 
-    if (files.length > 0) {
-        handleFile(files[0]);
+    if (files && files.length > 0) {
+        handleFiles(files);
     }
 }
 
 // Обработка загрузки файла
-function handleFile(file) {
-    // Проверка типа файла
-    if (!file.type.match('image.*')) {
-        alert('Пожалуйста, выберите изображение');
-        return;
-    }
+async function handleFiles(files) {
+    console.log('handleFiles вызван с', files.length, 'файлами');
 
-    // Отображение прогресса загрузки
     uploadProgress.style.display = 'block';
+    if (uploadStatus) uploadStatus.style.display = 'block';
     progressBar.style.width = '0%';
 
-    // Создание FormData для отправки файла
-    const formData = new FormData();
-    formData.append('file', file);
+    if (uploadedCountEl && totalCountEl) {
+        uploadedCountEl.textContent = '0';
+        totalCountEl.textContent = files.length;
+    }
 
-    // Отправка файла на сервер
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/upload', true);
 
-    // Обработка прогресса загрузки
-    xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-            const percent = (e.loaded / e.total) * 100;
-            progressBar.style.width = percent + '%';
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.match('image.*')) {
+            console.warn(`Файл ${file.name} пропущен`);
+            continue;
         }
-    });
 
-    // Обработка завершения загрузки
-    xhr.addEventListener('load', () => {
-        if (xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
+        try {
+            const percentComplete = ((i + 1) / files.length) * 100;
+            progressBar.style.width = percentComplete + '%';
+            if (uploadedCountEl) uploadedCountEl.textContent = i + 1;
 
-            if (response.success) {
-                // Сохранение ID изображения
-                currentImageId = response.image_id;
-                originalImageData = response.image_data;
-                currentResultData = response.image_data;
+            const reader = new FileReader();
+            const uploadResult = await new Promise((resolve, reject) => {
+                reader.onload = async (e) => {
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
 
-                // Отображение предпросмотра
-                preview.src = response.image_data;
-                preview.classList.add('fade-in');
+                        const response = await fetch('/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        resolve(await response.json());
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
 
-                // Отображение информации об изображении
-                imageInfo.textContent = `Размер: ${response.width}x${response.height} | Каналы: ${response.channels}`;
-                imageInfo.style.display = 'block';
-
-                // Включение элементов управления
-                filterCategory.disabled = false;
-                resetBtn.disabled = false;
-
-                // Сброс списка примененных фильтров
-                appliedFilters = [];
-                updateAppliedFiltersList();
-
-                console.log('Изображение успешно загружено:', response.image_id);
-            } else {
-                alert('Ошибка при загрузке изображения: ' + response.message);
+            if (uploadResult.success) {
+                uploadedImages.push({
+                    id: uploadResult.image_id,
+                    originalData: uploadResult.image_data,
+                    resultData: uploadResult.image_data,
+                    fileName: file.name,
+                    width: uploadResult.width,
+                    height: uploadResult.height,
+                    appliedFilters: []
+                });
             }
-        } else {
-            alert('Ошибка при загрузке изображения');
+        } catch (error) {
+            console.error(`Ошибка загрузки ${file.name}:`, error);
         }
+    }
 
-        // Скрытие прогресса загрузки
+    if (thumbnailsContainer) {
+        // Скрываем контейнер миниатюр, если загружено менее 2 изображений
+        thumbnailsContainer.style.display = uploadedImages.length >= 2 ? 'block' : 'none';
+    }
+
+    if (uploadedImages.length > 0) {
+        currentImageIndex = 0;
+        currentImageId = uploadedImages[0].id;
+        originalImageData = uploadedImages[0].originalData;
+        currentResultData = uploadedImages[0].resultData;
+
+        preview.src = currentResultData;
+        imageInfo.textContent = `Размер: ${uploadedImages[0].width}x${uploadedImages[0].height} | Файл: ${uploadedImages[0].fileName}`;
+        imageInfo.style.display = 'block';
+
+        updateThumbnailsContainer();
+        filterCategory.disabled = false;
+        resetBtn.disabled = false;
+    }
+
+    setTimeout(() => {
         uploadProgress.style.display = 'none';
-    });
-
-    // Обработка ошибки загрузки
-    xhr.addEventListener('error', () => {
-        alert('Ошибка при загрузке изображения');
-        uploadProgress.style.display = 'none';
-    });
-
-    // Отправка запроса
-    xhr.send(formData);
+        if (uploadStatus) uploadStatus.style.display = 'none';
+    }, 1000);
+    updateArchiveButton();
 }
+
+
+function uploadFile(file) {
+    return new Promise((resolve, reject) => {
+        // Создание FormData для отправки файла
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Отправка файла на сервер
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload', true);
+
+        // Обработка завершения загрузки
+        xhr.addEventListener('load', () => {
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    resolve(response);
+                } catch (e) {
+                    reject(new Error(`Ошибка при парсинге ответа: ${e.message}`));
+                }
+            } else {
+                reject(new Error(`Ошибка при загрузке изображения: ${xhr.statusText}`));
+            }
+        });
+
+        // Обработка ошибки загрузки
+        xhr.addEventListener('error', () => {
+            reject(new Error('Ошибка сети при загрузке изображения'));
+        });
+
+        // Отправка запроса
+        xhr.send(formData);
+    });
+}
+
 
 // Обработка изменения категории фильтра
 function handleCategoryChange() {
@@ -1293,10 +1370,16 @@ async function applyFilter() {
                 compareBtn.disabled = false;
                 clearFiltersBtn.disabled = false;
 
+                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+                uploadedImages[currentImageIndex].resultData = currentResultData;
+
                 console.log('Фильтр успешно применен:', filterSelected);
+                updateArchiveButton();
+
             } else {
                 alert('Ошибка при применении фильтра: ' + data.message);
             }
+
         }
 
         // Сбрасываем форму
@@ -1314,3 +1397,193 @@ async function applyFilter() {
         applyFilterBtn.disabled = false;
     }
 }
+
+
+function updateArchiveButton() {
+    const hasMultipleImages = uploadedImages.length > 1;
+    const hasFilters = appliedFilters.length > 0;
+
+    // Правильная проверка условий
+    const shouldShow = hasMultipleImages && hasFilters;
+
+    // Обновление стиля
+    archiveBtn.style.display = shouldShow ? "block" : "none";
+
+    // Обновление текста
+    if (shouldShow) {
+        archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов)`;
+    }
+    console.log("Cохраним архив");
+    console.log(shouldShow);
+    console.log(hasMultipleImages);
+    console.log(hasFilters);
+}
+
+
+
+function switchToImage(index) {
+    if (index < 0 || index >= uploadedImages.length) {
+        return;
+    }
+
+    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+    uploadedImages[currentImageIndex].resultData = currentResultData;
+
+    // Сохраняем текущий индекс
+    currentImageIndex = index;
+    const selectedImage = uploadedImages[index];
+
+
+    // Обновляем глобальные переменные
+    currentImageId = selectedImage.id;
+    originalImageData = selectedImage.originalData;
+    currentResultData = selectedImage.resultData || selectedImage.originalData;
+
+    // Обновляем большое изображение
+    preview.src = currentResultData;
+
+    // Обновляем информацию об изображении
+    imageInfo.textContent = `Размер: ${selectedImage.width}x${selectedImage.height} | Файл: ${selectedImage.fileName}`;
+    imageInfo.style.display = 'block';
+
+    // Обновляем выделение миниатюры
+    const thumbnails = document.querySelectorAll('.thumbnail');
+    thumbnails.forEach((thumb, idx) => {
+        if (idx === index) {
+            thumb.classList.add('active');
+        } else {
+            thumb.classList.remove('active');
+        }
+    });
+}
+
+
+function updateThumbnailsContainer() {
+    if (!thumbnailsContainer) return;
+
+    // Получаем контейнер с основным изображением
+    const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+    const previewParent = imagePreviewContainer ? imagePreviewContainer.parentElement : null;
+
+    // Управляем видимостью контейнера миниатюр
+    if (uploadedImages.length < 2) {
+        // Скрываем миниатюры когда меньше 2-х изображений
+        thumbnailsContainer.style.display = 'none';
+
+        // Расширяем контейнер основного изображения на всю ширину
+        if (previewParent) {
+            previewParent.classList.remove('col-md-9');
+            previewParent.classList.add('col-12');
+        }
+    } else {
+        // Показываем миниатюры
+        thumbnailsContainer.style.display = 'block';
+
+        // Возвращаем стандартную ширину
+        if (previewParent) {
+            previewParent.classList.remove('col-12');
+            previewParent.classList.add('col-md-9');
+        }
+
+        // Очищаем и заполняем контейнер миниатюр
+        thumbnailsContainer.innerHTML = '';
+
+        // Добавляем миниатюры для каждого изображения
+        uploadedImages.forEach((image, index) => {
+            const thumbnailDiv = document.createElement('div');
+            thumbnailDiv.className = `thumbnail ${index === currentImageIndex ? 'active' : ''}`;
+            thumbnailDiv.style.position = 'relative';
+
+            thumbnailDiv.innerHTML = `
+                <img src="${image.resultData || image.originalData}"
+                     alt="${image.fileName}"
+                     class="thumbnail-image">
+                <button class="btn btn-danger btn-sm delete-btn"
+                        data-index="${index}"
+                        title="Удалить изображение">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+
+            // Обработчики событий
+            thumbnailDiv.querySelector('.delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteImage(index);
+            });
+
+            thumbnailDiv.addEventListener('click', () => switchToImage(index));
+
+            thumbnailsContainer.appendChild(thumbnailDiv);
+        });
+    }
+}
+
+
+async function deleteImage(index) {
+    if (!confirm('Удалить это изображение?')) return;
+
+    const imageId = uploadedImages[index].id;
+
+    try {
+        // Удаление на сервере
+        await fetch(`/images/${imageId}`, { method: 'DELETE' });
+
+        // Удаление из локального массива
+        uploadedImages.splice(index, 1);
+
+        // Обновление текущего индекса
+        if (uploadedImages.length > 0) {
+            if (currentImageIndex >= uploadedImages.length) {
+                currentImageIndex = uploadedImages.length - 1;
+            }
+
+            // Обновляем текущее изображение
+            switchToImage(currentImageIndex);
+        } else {
+            // Если не осталось изображений
+            resetUIState();
+        }
+
+        // Обновление интерфейса миниатюр
+        updateThumbnailsContainer();
+
+        // Обновление видимости кнопки архива
+        updateArchiveButton();
+
+    } catch (error) {
+        console.error('Ошибка удаления:', error);
+    }
+}
+
+async function handleArchiveDownload() {
+    try {
+        processingContainer.style.display = 'block';
+        processingText.textContent = 'Подготовка архива...';
+
+        const response = await fetch('/create_archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_ids: uploadedImages.map(img => img.id),
+                filters: appliedFilters
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const link = document.createElement('a');
+            link.href = data.download_url;
+            link.download = data.archive_name;
+            link.click();
+        } else {
+            alert('Ошибка: ' + data.detail);
+        }
+    } catch (error) {
+        console.error('Ошибка архивации:', error);
+        alert('Ошибка при создании архива');
+    } finally {
+        processingContainer.style.display = 'none';
+    }
+}
+

@@ -90,7 +90,7 @@ def main():
     if not activate_virtualenv():
         return
 
-    missing_packages = check_dependencies()
+    """missing_packages = check_dependencies()
     if missing_packages:
         print(f"Отсутствуют следующие зависимости: {', '.join(missing_packages)}")
         install = input("Установить недостающие зависимости? (y/n): ").lower() == 'y'
@@ -102,6 +102,7 @@ def main():
         else:
             print("Для работы веб-версии необходимо установить все зависимости.")
             return
+    """
 
     create_required_dirs()
     run_server()

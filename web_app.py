@@ -837,8 +837,6 @@ class PresetResponse(BaseModel):
     usage_count: Optional[int] = None
 
 
-# API эндпоинты для работы с пресетами
-
 @app.get("/presets")
 async def get_presets(session_id: str = Depends(get_session_id)):
     try:
@@ -889,7 +887,6 @@ async def create_preset(preset_data: PresetCreate):
 @app.get("/presets/{preset_id}", response_model=PresetResponse)
 async def get_preset(
         preset_id: str,
-        session_id: str = Depends(get_session_id)
 ):
     """Получает пресет по ID"""
     try:
@@ -986,239 +983,59 @@ async def delete_preset_endpoint(
             "message": f"Ошибка при удалении пресета: {str(e)}"
         }
 
-    # Новая модель данных для пакетной обработки
-class BatchProcessRequest(BaseModel):
-    """Модель запроса на пакетную обработку изображений"""
-    image_ids: List[str]
-    filters: List[Dict[str, Any]]
 
-# Добавлен дополнительный каталог для хранения архивов
+
 ARCHIVE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "archives")
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
-# Новый эндпоинт для загрузки нескольких изображений
-@app.post("/upload_batch")
-async def upload_batch_images(
-        files: List[UploadFile] = File(...),
-        session_id: str = Depends(get_session_id)
-):
-    """Загрузка нескольких изображений на сервер"""
-    try:
-        start_time = time.time()
-        results = []
 
-        for file in files:
-            content = await file.read()
-
-            # Проверяем, что файл - изображение
-            try:
-                image = cv2.imdecode(np.frombuffer(content, np.uint8), cv2.IMREAD_COLOR)
-                if image is None:
-                    logger.warning(f"Файл {file.filename} не является изображением и будет пропущен")
-                    continue
-            except Exception as e:
-                logger.warning(f"Ошибка при декодировании {file.filename}: {e}")
-                continue
-
-            # Генерируем уникальный ID для изображения
-            image_id = str(uuid.uuid4())
-
-            # Сохраняем изображение на диск
-            file_path = os.path.join(UPLOAD_DIR, f"{image_id}.jpg")
-            with open(file_path, "wb") as f:
-                f.write(content)
-
-            # Сохраняем изображение в памяти
-            images_store[image_id] = image
-
-            # Получаем информацию об изображении
-            height, width = image.shape[:2]
-            channels = image.shape[2] if len(image.shape) > 2 else 1
-            file_size_kb = len(content) / 1024  # Размер в КБ
-
-            # Логируем информацию об изображении
-            await stats_db.log_image_processing(
-                session_id,
-                image_id,
-                file.filename,
-                width,
-                height,
-                channels,
-                file_size_kb,
-                processing_time=0  # Здесь пока 0, так как еще не обрабатывали
-            )
-
-            # Конвертируем изображение в Base64 для отображения в браузере
-            _, buffer = cv2.imencode('.jpg', image)
-            image_base64 = base64.b64encode(buffer).decode('utf-8')
-
-            # Добавляем информацию об изображении в результаты
-            results.append({
-                "image_id": image_id,
-                "filename": file.filename,
-                "width": width,
-                "height": height,
-                "channels": channels,
-                "image_data": f"data:image/jpeg;base64,{image_base64}"
-            })
-
-        # Логируем событие загрузки
-        await stats_db.log_app_event(
-            "batch_upload",
-            session_id,
-            f"Загружено {len(results)} изображений в пакетном режиме"
-        )
-
-        total_time = (time.time() - start_time) * 1000
-        logger.info(f"Пакетная загрузка: загружено {len(results)} изображений за {total_time:.2f} мс")
-
-        return {
-            "success": True,
-            "message": f"Загружено {len(results)} изображений",
-            "images": results
-        }
-
-    except Exception as e:
-        logger.error(f"Ошибка при пакетной загрузке изображений: {e}")
-        # Логируем ошибку
-        await stats_db.log_app_event(
-            "batch_upload_error",
-            session_id,
-            f"Ошибка при пакетной загрузке изображений: {e}"
-        )
-        raise HTTPException(status_code=500, detail=f"Ошибка при загрузке изображений: {str(e)}")
-
-# Новый эндпоинт для пакетной обработки изображений
-@app.post("/batch_process")
-async def batch_process_images(
-        batch_request: BatchProcessRequest,
-        session_id: str = Depends(get_session_id)
-):
-    """Пакетная обработка нескольких изображений с применением фильтров"""
-    try:
-        start_time = time.time()
-        results = []
-
-        # Проверяем все ли изображения есть в хранилище
-        missing_images = []
-        for image_id in batch_request.image_ids:
-            if image_id not in images_store:
-                missing_images.append(image_id)
-
-        if missing_images:
-            return {
-                "success": False,
-                "message": f"Не найдены следующие изображения: {', '.join(missing_images)}",
-                "missing_images": missing_images
-            }
-
-        # Обрабатываем каждое изображение
-        for image_id in batch_request.image_ids:
-            # Получаем исходное изображение
-            image = images_store[image_id].copy()
-            result_image = image.copy()
-
-            # Применяем каждый фильтр
-            for filter_data in batch_request.filters:
-                try:
-                    # Применяем фильтр
-                    result_image = await apply_filter(
-                        result_image,
-                        filter_data["name"],
-                        filter_data["category"],
-                        filter_data.get("params", []),
-                        session_id
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Ошибка при применении фильтра {filter_data['name']} к изображению {image_id}: {e}")
-
-            # Конвертируем результат в Base64
-            _, buffer = cv2.imencode('.jpg', result_image)
-            image_base64 = base64.b64encode(buffer).decode('utf-8')
-
-            # Сохраняем результат в результаты и в хранилище
-            result_id = f"{image_id}_batch_result"
-            images_store[result_id] = result_image
-
-            # Сохраняем результат на диск
-            result_path = os.path.join(RESULT_DIR, f"{result_id}.jpg")
-            cv2.imwrite(result_path, result_image)
-
-            results.append({
-                "image_id": image_id,
-                "result_id": result_id,
-                "image_data": f"data:image/jpeg;base64,{image_base64}"
-            })
-
-        # Логируем событие пакетной обработки
-        total_time = (time.time() - start_time) * 1000
-        await stats_db.log_app_event(
-            "batch_processing",
-            session_id,
-            f"Обработано {len(batch_request.image_ids)} изображений за {total_time:.2f} мс с {len(batch_request.filters)} фильтрами"
-        )
-
-        logger.info(
-            f"Пакетная обработка: обработано {len(batch_request.image_ids)} изображений за {total_time:.2f} мс")
-
-        return {
-            "success": True,
-            "message": f"Обработано {len(batch_request.image_ids)} изображений",
-            "results": results,
-            "processing_time_ms": total_time
-        }
-
-    except Exception as e:
-        logger.error(f"Ошибка при пакетной обработке изображений: {e}")
-        # Логируем ошибку
-        await stats_db.log_app_event(
-            "batch_processing_error",
-            session_id,
-            f"Ошибка при пакетной обработке изображений: {e}"
-        )
-        raise HTTPException(status_code=500, detail=f"Ошибка при обработке изображений: {str(e)}")
-
-# Новый эндпоинт для создания архива
-# Добавим модель запроса
-
-
-
-# Обновим эндпоинт
 @app.post("/create_archive")
 async def create_archive_endpoint(
         request: ArchiveCreateRequest,
         session_id: str = Depends(get_session_id)
 ):
     try:
-        # Проверка минимальных требований
+        # Проверка минимальных требований - только проверяем наличие изображений
         if len(request.image_ids) < 2:
             raise HTTPException(status_code=400, detail="Need at least 2 images")
-
-        if not request.filters:
-            raise HTTPException(status_code=400, detail="No filters applied")
 
         # Создание архива
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zip_file:
             for img_id in request.image_ids:
                 if img_id not in images_store:
+                    logger.warning(f"Изображение {img_id} не найдено при создании архива")
                     continue
 
-                img = images_store[img_id].copy()
-                # Применяем фильтры
-                for f in request.filters:
-                    img = await apply_filter(
-                        img,
-                        f["name"],
-                        f["category"],
-                        f.get("params", []),
-                        session_id
-                    )
+                # Получаем оригинальное изображение
+                original_img = images_store[img_id].copy()
+
+                # Для обработанного изображения ищем результат с самым длинным именем
+                # (последний результат обработки) или используем оригинал
+                processed_img_key = img_id
+                for key in images_store.keys():
+                    if key.startswith(f"{img_id}_") and len(key) > len(processed_img_key):
+                        processed_img_key = key
+
+                # Используем найденное обработанное изображение или оригинал, если обработки не было
+                processed_img = images_store[processed_img_key].copy()
+
+                # Если ключи совпадают, значит обработки не было, и мы используем оригинал
+                has_filters = processed_img_key != img_id
 
                 # Конвертация в bytes
-                _, img_encoded = cv2.imencode(".jpg", img)
-                zip_file.writestr(f"processed_{img_id}.jpg", img_encoded.tobytes())
+                _, original_encoded = cv2.imencode(".jpg", original_img)
+                _, processed_encoded = cv2.imencode(".jpg", processed_img)
+
+                # Добавляем оригинал и обработанное изображение в архив
+                zip_file.writestr(f"original_{img_id}.jpg", original_encoded.tobytes())
+
+                # Если обработки не было, сохраняем копию оригинала
+                if has_filters:
+                    zip_file.writestr(f"processed_{img_id}.jpg", processed_encoded.tobytes())
+                else:
+                    zip_file.writestr(f"processed_{img_id}.jpg", original_encoded.tobytes())
+                    logger.info(f"Для изображения {img_id} нет обработки, используется оригинал")
 
         zip_buffer.seek(0)
         archive_name = f"processed_{int(time.time())}.zip"
@@ -1228,6 +1045,13 @@ async def create_archive_endpoint(
         with open(archive_path, "wb") as f:
             f.write(zip_buffer.getvalue())
 
+        # Логируем успешное создание архива
+        await stats_db.log_app_event(
+            "archive_created",
+            session_id,
+            f"Создан архив {archive_name} с {len(request.image_ids)} изображениями"
+        )
+
         return JSONResponse({
             "success": True,
             "archive_name": archive_name,
@@ -1236,9 +1060,15 @@ async def create_archive_endpoint(
 
     except Exception as e:
         logger.error(f"Archive error: {str(e)}")
+        # Логируем ошибку создания архива
+        await stats_db.log_app_event(
+            "archive_error",
+            session_id,
+            f"Ошибка при создании архива: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
-# Новый эндпоинт для скачивания архива
+
 @app.get("/download_archive/{archive_name}")
 async def download_archive(
         archive_name: str,
@@ -1249,6 +1079,12 @@ async def download_archive(
         archive_path = os.path.join(ARCHIVE_DIR, archive_name)
 
         if not os.path.exists(archive_path):
+            # Логируем ошибку - архив не найден
+            await stats_db.log_app_event(
+                "archive_not_found",
+                session_id,
+                f"Архив {archive_name} не найден при попытке скачивания"
+            )
             raise HTTPException(status_code=404, detail="Архив не найден")
 
         # Логируем скачивание
@@ -1256,6 +1092,14 @@ async def download_archive(
             "archive_download",
             session_id,
             f"Скачивание архива {archive_name}"
+        )
+
+        # Дополнительное логирование статистики
+        archive_size = os.path.getsize(archive_path) / 1024  # размер в КБ
+        await stats_db.log_app_event(
+            "archive_download_details",
+            session_id,
+            f"Архив {archive_name}, размер: {archive_size:.2f} КБ"
         )
 
         return FileResponse(
@@ -1268,7 +1112,65 @@ async def download_archive(
         raise he
     except Exception as e:
         logger.error(f"Ошибка при скачивании архива {archive_name}: {e}")
+        await stats_db.log_app_event(
+            "archive_download_error",
+            session_id,
+            f"Ошибка при скачивании архива {archive_name}: {e}"
+        )
         raise HTTPException(status_code=500, detail=f"Ошибка при скачивании архива: {str(e)}")
+
+
+@app.post("/reset_filters/{image_id}")
+async def reset_filters(
+        image_id: str,
+        session_id: str = Depends(get_session_id)
+):
+    """
+    Сбрасывает фильтры, примененные к изображению, удаляя промежуточные результаты.
+    """
+    try:
+        # Проверяем существование исходного изображения
+        if image_id not in images_store:
+            return JSONResponse({
+                "success": False,
+                "message": "Исходное изображение не найдено"
+            })
+
+        # Удаляем все промежуточные результаты
+        keys_to_delete = [key for key in images_store if key.startswith(f"{image_id}_")]
+
+        for key in keys_to_delete:
+            del images_store[key]
+
+            # Удаляем и соответствующие файлы
+            file_path = os.path.join(RESULT_DIR, f"{key}.jpg")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+        # Логируем сброс фильтров
+        await stats_db.log_app_event(
+            "filters_reset",
+            session_id,
+            f"Фильтры сброшены для изображения {image_id}"
+        )
+
+        return JSONResponse({
+            "success": True,
+            "message": "Фильтры успешно сброшены"
+        })
+
+    except Exception as e:
+        logger.error(f"Ошибка при сбросе фильтров для {image_id}: {e}")
+        # Логируем ошибку
+        await stats_db.log_app_event(
+            "filters_reset_error",
+            session_id,
+            f"Ошибка при сбросе фильтров для изображения {image_id}: {e}"
+        )
+        return JSONResponse({
+            "success": False,
+            "message": f"Ошибка при сбросе фильтров: {str(e)}"
+        })
 
 
 

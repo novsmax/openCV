@@ -1,14 +1,13 @@
 let currentImageId = null;
 let originalImageData = null;
 let currentResultData = null;
-let appliedFilters = [];
+let appliedFilters = []; // Будет обновляться при переключении между изображениями
 let allFilters = {};
 let sortableInstance = null;
 let presetsList = [];
 let currentPresetId = null;
-let uploadedImages = []; // Массив со всеми загруженными изображениями { id, originalData, resultData, fileName, ... }
+let uploadedImages = []; // Массив со всеми загруженными изображениями { id, originalData, resultData, fileName, appliedFilters: [...] }
 let currentImageIndex = 0;
-
 
 // DOM-элементы
 const archiveBtn = document.getElementById('downloadArchiveBtn');
@@ -66,7 +65,7 @@ async function fetchFilters() {
             filterCategory.appendChild(option);
         });
 
-        console.log('Фильтры успешно загруженывввввввввввввввввввввввввввввв');
+        console.log('Фильтры успешно загружены');
     } catch (error) {
         console.error('Ошибка при загрузке фильтров:', error);
         alert('Не удалось загрузить список фильтров. Пожалуйста, обновите страницу.');
@@ -116,6 +115,8 @@ function updatePresetsDropdown() {
 // Настройка обработчиков событий
 function setupEventListeners() {
     // Drag and drop для загрузки изображения
+    console.log('Инициализация обработчиков...');
+
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropArea.addEventListener(eventName, preventDefaults, false);
     });
@@ -153,7 +154,24 @@ function setupEventListeners() {
     const deletePresetBtn = document.getElementById('deletePresetBtn');
     const savePresetModalBtn = document.getElementById('savePresetModalBtn');
     const closeModalBtns = document.getElementsByClassName('close-modal');
+    const presetHeader = document.getElementById('presetHeader');
+    const presetBody = document.getElementById('presetBody');
+    const presetToggleIcon = document.getElementById('presetToggleIcon');
 
+    if (presetHeader && presetBody) {
+        presetHeader.addEventListener('click', function() {
+            // Переключаем отображение содержимого
+            if (presetBody.style.display === 'none') {
+                presetBody.style.display = 'block';
+                presetToggleIcon.classList.remove('fa-chevron-down');
+                presetToggleIcon.classList.add('fa-chevron-up');
+            } else {
+                presetBody.style.display = 'none';
+                presetToggleIcon.classList.remove('fa-chevron-up');
+                presetToggleIcon.classList.add('fa-chevron-down');
+            }
+        });
+    }
 
     if (presetsDropdown) presetsDropdown.addEventListener('change', () => {
         currentPresetId = presetsDropdown.value;
@@ -162,7 +180,7 @@ function setupEventListeners() {
     if (applyPresetBtn) applyPresetBtn.addEventListener('click', applyPreset);
     if (savePresetBtn) {
         savePresetBtn.addEventListener('click', openSavePresetDialog);
-        console.log('Обработчик сохранения привязан'); // Для отладки
+        console.log('Обработчик сохранения привязан');
     } else {
         console.error('Кнопка "Сохранить" не найдена!');
     }
@@ -179,6 +197,51 @@ function setupEventListeners() {
     }
 }
 
+async function clearAllFilters() {
+    // Проверка
+    if (appliedFilters.length === 0) {
+        return;
+    }
+
+    // Запрос подтверждения
+    if (!confirm('Вы уверены, что хотите удалить все примененные фильтры?')) {
+        return;
+    }
+
+    // Сброс режима редактирования
+    exitEditMode();
+
+    // Очистка списка фильтров текущего изображения
+    appliedFilters = [];
+    uploadedImages[currentImageIndex].appliedFilters = [];
+
+    await resetServerFilters();
+    updateAppliedFiltersList();
+
+    // Возвращаем исходное изображение
+    preview.src = originalImageData;
+    currentResultData = originalImageData;
+    uploadedImages[currentImageIndex].resultData = originalImageData;
+    updateThumbnailsContainer();
+
+    // Отключение кнопок
+    downloadBtn.disabled = true;
+    compareBtn.disabled = true;
+    clearFiltersBtn.disabled = true;
+
+    console.log('Все фильтры удалены');
+}
+
+async function resetServerFilters() {
+    if (!currentImageId) return;
+    try {
+        await fetch(`/reset_filters/${currentImageId}`, {
+            method: 'POST'
+        });
+    } catch (error) {
+        console.error('Ошибка при сбросе фильтров на сервере:', error);
+    }
+}
 
 // Обновление текущего пресета
 async function updateCurrentPreset() {
@@ -213,7 +276,6 @@ async function updateCurrentPreset() {
 
         if (data.success) {
             console.log('Пресет успешно обновлен');
-
             await fetchUserPresets();
         } else {
             alert('Ошибка при обновлении пресета: ' + data.message);
@@ -248,6 +310,13 @@ async function applyPresetFilters(filters) {
     preview.src = originalImageData;
     currentResultData = originalImageData;
 
+    // Очищаем текущие фильтры
+    appliedFilters = [];
+    uploadedImages[currentImageIndex].appliedFilters = [];
+
+    // Сбрасываем фильтры на сервере перед применением новых
+    await resetServerFilters();
+
     for (let i = 0; i < filters.length; i++) {
         const filter = filters[i];
 
@@ -271,7 +340,12 @@ async function applyPresetFilters(filters) {
             preview.src = data.image_data;
             currentResultData = data.image_data;
 
+            // Добавляем фильтр в список применённых
             appliedFilters.push(filter);
+
+            // Сохраняем изменения в массиве uploadedImages
+            uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+            uploadedImages[currentImageIndex].resultData = currentResultData;
         } else {
             alert('Ошибка при применении фильтра: ' + data.message);
             break;
@@ -279,10 +353,11 @@ async function applyPresetFilters(filters) {
     }
 
     updateAppliedFiltersList();
+    updateThumbnailsContainer();
 
     downloadBtn.disabled = false;
     compareBtn.disabled = false;
-    clearFiltersBtn.disabled = false;
+    clearFiltersBtn.disabled = appliedFilters.length === 0;
 }
 
 // Удаление пресета
@@ -374,7 +449,7 @@ async function savePreset() {
                 filters_data: appliedFilters
             })
         });
-        console.log(response);
+
         const data = await response.json();
 
         if (data.success) {
@@ -421,12 +496,9 @@ async function applyPreset() {
 
         if (data.success) {
             console.log('Пресет успешно загружен:', data.preset_name);
-
             currentPresetId = presetId;
-            appliedFilters = [];
             await applyPresetFilters(data.filters_data);
             updateArchiveButton();
-
         } else {
             alert('Ошибка при загрузке пресета: ' + data.message);
         }
@@ -438,8 +510,8 @@ async function applyPreset() {
     }
 }
 
-// Сброс изображения
-function clearAllFilters() {
+// Сброс всех изображений
+function resetImage() {
     if (!confirm('Вы уверены, что хотите полностью сбросить ВСЕ изображения?')) return;
 
     // 1. Полный сброс всех данных
@@ -469,13 +541,14 @@ function clearAllFilters() {
     const imagePreviewContainer = document.getElementById('imagePreviewContainer');
     if (imagePreviewContainer) {
         imagePreviewContainer.classList.remove('col-md-9');
-        imagePreviewContainer.classList.add('col-12');
+        imagePreviewContainer.classList.add('col-12-mb-3');
     }
 
     // 3. Сброс элементов управления
     filterCategory.selectedIndex = 0;
     filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
     filterParams.innerHTML = '';
+    filterCategory.disabled = true;
 
     updateAppliedFiltersList();
     updateArchiveButton();
@@ -483,6 +556,7 @@ function clearAllFilters() {
     downloadBtn.disabled = true;
     compareBtn.disabled = true;
     clearFiltersBtn.disabled = true;
+    resetBtn.disabled = true;
 
     // 4. Принудительная очистка кэша
     URL.revokeObjectURL(preview.src);
@@ -523,47 +597,16 @@ function toggleCompareMode() {
     }
 }
 
-// Очистка всех фильтров
-function clearAllFilters() {
-    // Проверка
-    if (appliedFilters.length === 0) {
-        return;
-    }
-
-    // Запрос подтверждения
-    if (!confirm('Вы уверены, что хотите удалить все примененные фильтры?')) {
-        return;
-    }
-
-    // Сброс режима редактирования
-    exitEditMode();
-
-    // Очистка списка фильтров
-    appliedFilters = [];
-    updateAppliedFiltersList();
-
-    // Возвращаем исходное изображение
-    preview.src = originalImageData;
-    currentResultData = originalImageData;
-
-    // Отключение кнопок
-    downloadBtn.disabled = true;
-    compareBtn.disabled = true;
-    clearFiltersBtn.disabled = true;
-
-    console.log('Все фильтры удалены');
-}
-
 // Удаление фильтра из списка
 function removeFilter(index) {
     // Проверяем, не редактируется ли этот фильтр
     if (applyFilterBtn.dataset.editIndex == index) {
         exitEditMode();
     }
-    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
-    uploadedImages[currentImageIndex].resultData = currentResultData;
+
     // Удаление фильтра
     appliedFilters.splice(index, 1);
+    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
 
     // Обновление списка
     updateAppliedFiltersList();
@@ -577,10 +620,15 @@ function removeFilter(index) {
         // Возвращаем исходное изображение
         preview.src = originalImageData;
         currentResultData = originalImageData;
+        uploadedImages[currentImageIndex].resultData = originalImageData;
+
+        resetServerFilters();
     } else {
         // Иначе применяем оставшиеся фильтры заново
         reapplyFilters();
     }
+
+    updateArchiveButton();
 }
 
 // Функция для редактирования фильтра
@@ -663,6 +711,8 @@ async function reapplyFilters() {
     processingContainer.style.display = 'block';
     processingText.textContent = `Обновление фильтров...`;
 
+    await resetServerFilters();
+
     try {
         // Начинаем с исходного изображения
         preview.src = originalImageData;
@@ -694,7 +744,6 @@ async function reapplyFilters() {
                 preview.src = data.image_data;
                 currentResultData = data.image_data;
                 uploadedImages[currentImageIndex].resultData = currentResultData;
-                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
             } else {
                 alert('Ошибка при применении фильтра: ' + data.message);
                 break;
@@ -703,6 +752,7 @@ async function reapplyFilters() {
 
         // Обновляем список примененных фильтров
         updateAppliedFiltersList();
+        updateThumbnailsContainer();
     } catch (error) {
         console.error('Ошибка при обновлении фильтров:', error);
         alert('Ошибка при обновлении фильтров');
@@ -779,13 +829,13 @@ function updateAppliedFiltersList() {
                 const oldIndex = evt.oldIndex;
                 const newIndex = evt.newIndex;
 
-                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
-                uploadedImages[currentImageIndex].resultData = currentResultData;
-
                 // Перемещаем фильтр в массиве
                 if (oldIndex !== newIndex) {
                     const filterToMove = appliedFilters.splice(oldIndex, 1)[0];
                     appliedFilters.splice(newIndex, 0, filterToMove);
+
+                    // Обновляем фильтры в массиве uploadedImages
+                    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
 
                     // Применяем фильтры заново
                     reapplyFilters();
@@ -845,7 +895,6 @@ async function handleFiles(files) {
         totalCountEl.textContent = files.length;
     }
 
-
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (!file.type.match('image.*')) {
@@ -894,7 +943,7 @@ async function handleFiles(files) {
     }
 
     if (thumbnailsContainer) {
-        // Скрываем контейнер миниатюр, если загружено менее 2 изображений
+        // Показываем/скрываем контейнер миниатюр в зависимости от количества загруженных изображений
         thumbnailsContainer.style.display = uploadedImages.length >= 2 ? 'block' : 'none';
     }
 
@@ -903,58 +952,31 @@ async function handleFiles(files) {
         currentImageId = uploadedImages[0].id;
         originalImageData = uploadedImages[0].originalData;
         currentResultData = uploadedImages[0].resultData;
+        appliedFilters = uploadedImages[0].appliedFilters || [];
 
         preview.src = currentResultData;
         imageInfo.textContent = `Размер: ${uploadedImages[0].width}x${uploadedImages[0].height} | Файл: ${uploadedImages[0].fileName}`;
         imageInfo.style.display = 'block';
 
         updateThumbnailsContainer();
+        updateAppliedFiltersList();
+
         filterCategory.disabled = false;
         resetBtn.disabled = false;
+
+        // Активируем кнопки управления, если есть примененные фильтры
+        downloadBtn.disabled = appliedFilters.length === 0;
+        compareBtn.disabled = appliedFilters.length === 0;
+        clearFiltersBtn.disabled = appliedFilters.length === 0;
     }
 
     setTimeout(() => {
         uploadProgress.style.display = 'none';
         if (uploadStatus) uploadStatus.style.display = 'none';
     }, 1000);
+
     updateArchiveButton();
 }
-
-
-function uploadFile(file) {
-    return new Promise((resolve, reject) => {
-        // Создание FormData для отправки файла
-        const formData = new FormData();
-        formData.append('file', file);
-
-        // Отправка файла на сервер
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/upload', true);
-
-        // Обработка завершения загрузки
-        xhr.addEventListener('load', () => {
-            if (xhr.status === 200) {
-                try {
-                    const response = JSON.parse(xhr.responseText);
-                    resolve(response);
-                } catch (e) {
-                    reject(new Error(`Ошибка при парсинге ответа: ${e.message}`));
-                }
-            } else {
-                reject(new Error(`Ошибка при загрузке изображения: ${xhr.statusText}`));
-            }
-        });
-
-        // Обработка ошибки загрузки
-        xhr.addEventListener('error', () => {
-            reject(new Error('Ошибка сети при загрузке изображения'));
-        });
-
-        // Отправка запроса
-        xhr.send(formData);
-    });
-}
-
 
 // Обработка изменения категории фильтра
 function handleCategoryChange() {
@@ -1323,6 +1345,9 @@ async function applyFilter() {
                 params: params
             };
 
+            // Обновляем фильтры в массиве uploadedImages
+            uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+
             // После обновления применяем все фильтры заново в правильном порядке
             await reapplyFilters();
 
@@ -1362,30 +1387,31 @@ async function applyFilter() {
                     params: params
                 });
 
+                // Сохраняем измененные фильтры в массиве uploadedImages
+                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
+                uploadedImages[currentImageIndex].resultData = currentResultData;
+
                 // Обновление списка примененных фильтров
                 updateAppliedFiltersList();
+                updateThumbnailsContainer();
 
                 // Включение кнопок
                 downloadBtn.disabled = false;
                 compareBtn.disabled = false;
                 clearFiltersBtn.disabled = false;
 
-                uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
-                uploadedImages[currentImageIndex].resultData = currentResultData;
-
                 console.log('Фильтр успешно применен:', filterSelected);
                 updateArchiveButton();
-
             } else {
                 alert('Ошибка при применении фильтра: ' + data.message);
             }
-
         }
 
-        // Сбрасываем форму
-        filterParams.innerHTML = '';
-        filterName.selectedIndex = 0;
-
+        // Сбрасываем форму после добавления фильтра
+        if (!isEditing) {
+            filterParams.innerHTML = '';
+            filterName.selectedIndex = 0;
+        }
     } catch (error) {
         console.error('Ошибка при применении фильтра:', error);
         alert('Ошибка при применении фильтра');
@@ -1398,46 +1424,50 @@ async function applyFilter() {
     }
 }
 
-
 function updateArchiveButton() {
     const hasMultipleImages = uploadedImages.length > 1;
-    const hasFilters = appliedFilters.length > 0;
 
-    // Правильная проверка условий
-    const shouldShow = hasMultipleImages && hasFilters;
+    // Проверяем, есть ли хотя бы одно изображение с примененными фильтрами
+    const hasProcessedImages = uploadedImages.some(img =>
+        img.appliedFilters && img.appliedFilters.length > 0
+    );
+
+    // Показываем кнопку если есть несколько изображений
+    // Наличие фильтров больше не обязательно, так как мы можем архивировать и необработанные изображения
+    const shouldShow = hasMultipleImages;
 
     // Обновление стиля
     archiveBtn.style.display = shouldShow ? "block" : "none";
 
-    // Обновление текста
+    // Обновление текста с информацией об обработанных изображениях
     if (shouldShow) {
-        archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов)`;
+        if (hasProcessedImages) {
+            archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов, есть обработанные)`;
+        } else {
+            archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов)`;
+        }
     }
-    console.log("Cохраним архив");
-    console.log(shouldShow);
-    console.log(hasMultipleImages);
-    console.log(hasFilters);
 }
-
-
 
 function switchToImage(index) {
     if (index < 0 || index >= uploadedImages.length) {
         return;
     }
 
-    uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
-    uploadedImages[currentImageIndex].resultData = currentResultData;
+    // Если текущее изображение, нет необходимости переключаться
+    if (currentImageIndex === index) return;
 
     // Сохраняем текущий индекс
     currentImageIndex = index;
     const selectedImage = uploadedImages[index];
 
-
     // Обновляем глобальные переменные
     currentImageId = selectedImage.id;
     originalImageData = selectedImage.originalData;
     currentResultData = selectedImage.resultData || selectedImage.originalData;
+
+    // Обновляем список примененных фильтров для нового изображения
+    appliedFilters = selectedImage.appliedFilters || [];
 
     // Обновляем большое изображение
     preview.src = currentResultData;
@@ -1455,8 +1485,15 @@ function switchToImage(index) {
             thumb.classList.remove('active');
         }
     });
-}
 
+    // Обновляем список примененных фильтров в UI
+    updateAppliedFiltersList();
+
+    // Активируем/деактивируем кнопки в зависимости от наличия фильтров
+    downloadBtn.disabled = appliedFilters.length === 0;
+    compareBtn.disabled = appliedFilters.length === 0;
+    clearFiltersBtn.disabled = appliedFilters.length === 0;
+}
 
 function updateThumbnailsContainer() {
     if (!thumbnailsContainer) return;
@@ -1494,8 +1531,11 @@ function updateThumbnailsContainer() {
             thumbnailDiv.className = `thumbnail ${index === currentImageIndex ? 'active' : ''}`;
             thumbnailDiv.style.position = 'relative';
 
+            // Используем оригинальные или обработанные данные для миниатюры
+            const thumbnailSrc = image.resultData || image.originalData;
+
             thumbnailDiv.innerHTML = `
-                <img src="${image.resultData || image.originalData}"
+                <img src="${thumbnailSrc}"
                      alt="${image.fileName}"
                      class="thumbnail-image">
                 <button class="btn btn-danger btn-sm delete-btn"
@@ -1518,7 +1558,6 @@ function updateThumbnailsContainer() {
     }
 }
 
-
 async function deleteImage(index) {
     if (!confirm('Удалить это изображение?')) return;
 
@@ -1531,7 +1570,7 @@ async function deleteImage(index) {
         // Удаление из локального массива
         uploadedImages.splice(index, 1);
 
-        // Обновление текущего индекса
+        // Обновление текущего индекса если нужно
         if (uploadedImages.length > 0) {
             if (currentImageIndex >= uploadedImages.length) {
                 currentImageIndex = uploadedImages.length - 1;
@@ -1540,7 +1579,7 @@ async function deleteImage(index) {
             // Обновляем текущее изображение
             switchToImage(currentImageIndex);
         } else {
-            // Если не осталось изображений
+            // Если не осталось изображений, сбрасываем состояние UI
             resetUIState();
         }
 
@@ -1555,29 +1594,54 @@ async function deleteImage(index) {
     }
 }
 
+function resetUIState() {
+    currentImageId = null;
+    originalImageData = null;
+    currentResultData = null;
+    appliedFilters = [];
+
+    preview.src = '/static/placeholder.jpg';
+    imageInfo.style.display = 'none';
+
+    filterCategory.selectedIndex = 0;
+    filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
+    filterParams.innerHTML = '';
+    filterCategory.disabled = true;
+
+    downloadBtn.disabled = true;
+    compareBtn.disabled = true;
+    clearFiltersBtn.disabled = true;
+    resetBtn.disabled = true;
+
+    updateAppliedFiltersList();
+}
+
 async function handleArchiveDownload() {
     try {
         processingContainer.style.display = 'block';
         processingText.textContent = 'Подготовка архива...';
 
+        // Получаем только ID всех загруженных изображений
+        // Нам больше не нужно передавать фильтры, так как будут использоваться
+        // уже обработанные изображения с сервера
+        const imageIds = uploadedImages.map(img => img.id);
+
         const response = await fetch('/create_archive', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                image_ids: uploadedImages.map(img => img.id),
-                filters: appliedFilters
+                image_ids: imageIds,
+                filters: [] // Пустой массив, т.к. фильтры нам уже не нужны
             })
         });
 
         const data = await response.json();
 
         if (data.success) {
-            const link = document.createElement('a');
-            link.href = data.download_url;
-            link.download = data.archive_name;
-            link.click();
+            // Скачивание архива
+            window.location.href = data.download_url;
         } else {
-            alert('Ошибка: ' + data.detail);
+            alert('Ошибка: ' + (data.detail || 'Не удалось создать архив'));
         }
     } catch (error) {
         console.error('Ошибка архивации:', error);
@@ -1586,4 +1650,3 @@ async function handleArchiveDownload() {
         processingContainer.style.display = 'none';
     }
 }
-

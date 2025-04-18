@@ -114,7 +114,6 @@ function updatePresetsDropdown() {
 
 // Настройка обработчиков событий
 function setupEventListeners() {
-    // Drag and drop для загрузки изображения
     console.log('Инициализация обработчиков...');
 
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -133,11 +132,9 @@ function setupEventListeners() {
     dropArea.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', handleFileSelect);
 
-    // Выбор фильтра
     filterCategory.addEventListener('change', handleCategoryChange);
     filterName.addEventListener('change', handleFilterChange);
 
-    // Кнопки действий
     applyFilterBtn.addEventListener('click', applyFilter);
     cancelEditBtn.addEventListener('click', cancelEditing);
     resetBtn.addEventListener('click', resetImage);
@@ -146,7 +143,6 @@ function setupEventListeners() {
     clearFiltersBtn.addEventListener('click', clearAllFilters);
     archiveBtn.addEventListener('click', handleArchiveDownload);
 
-    // Обработчики для пресетов
     const presetsDropdown = document.getElementById('presetsDropdown');
     const applyPresetBtn = document.getElementById('applyPresetBtn');
     const savePresetBtn = document.getElementById('savePresetBtn');
@@ -160,7 +156,6 @@ function setupEventListeners() {
 
     if (presetHeader && presetBody) {
         presetHeader.addEventListener('click', function() {
-            // Переключаем отображение содержимого
             if (presetBody.style.display === 'none') {
                 presetBody.style.display = 'block';
                 presetToggleIcon.classList.remove('fa-chevron-down');
@@ -188,7 +183,6 @@ function setupEventListeners() {
     if (deletePresetBtn) deletePresetBtn.addEventListener('click', deletePreset);
     if (savePresetModalBtn) savePresetModalBtn.addEventListener('click', savePreset);
 
-    // Добавление обработчиков для закрытия модальных окон
     for (let i = 0; i < closeModalBtns.length; i++) {
         closeModalBtns[i].addEventListener('click', () => {
             const modalId = closeModalBtns[i].getAttribute('data-modal');
@@ -198,33 +192,27 @@ function setupEventListeners() {
 }
 
 async function clearAllFilters() {
-    // Проверка
     if (appliedFilters.length === 0) {
         return;
     }
 
-    // Запрос подтверждения
     if (!confirm('Вы уверены, что хотите удалить все примененные фильтры?')) {
         return;
     }
 
-    // Сброс режима редактирования
     exitEditMode();
 
-    // Очистка списка фильтров текущего изображения
     appliedFilters = [];
     uploadedImages[currentImageIndex].appliedFilters = [];
 
     await resetServerFilters();
     updateAppliedFiltersList();
 
-    // Возвращаем исходное изображение
     preview.src = originalImageData;
     currentResultData = originalImageData;
     uploadedImages[currentImageIndex].resultData = originalImageData;
     updateThumbnailsContainer();
 
-    // Отключение кнопок
     downloadBtn.disabled = true;
     compareBtn.disabled = true;
     clearFiltersBtn.disabled = true;
@@ -310,11 +298,9 @@ async function applyPresetFilters(filters) {
     preview.src = originalImageData;
     currentResultData = originalImageData;
 
-    // Очищаем текущие фильтры
     appliedFilters = [];
     uploadedImages[currentImageIndex].appliedFilters = [];
 
-    // Сбрасываем фильтры на сервере перед применением новых
     await resetServerFilters();
 
     for (let i = 0; i < filters.length; i++) {
@@ -340,10 +326,8 @@ async function applyPresetFilters(filters) {
             preview.src = data.image_data;
             currentResultData = data.image_data;
 
-            // Добавляем фильтр в список применённых
             appliedFilters.push(filter);
 
-            // Сохраняем изменения в массиве uploadedImages
             uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
             uploadedImages[currentImageIndex].resultData = currentResultData;
         } else {
@@ -514,7 +498,6 @@ async function applyPreset() {
 function resetImage() {
     if (!confirm('Вы уверены, что хотите полностью сбросить ВСЕ изображения?')) return;
 
-    // 1. Полный сброс всех данных
     uploadedImages = [];
     currentImageId = null;
     originalImageData = null;
@@ -522,11 +505,9 @@ function resetImage() {
     appliedFilters = [];
     currentImageIndex = 0;
 
-    // 2. Сброс DOM-элементов
     preview.src = '/static/placeholder.jpg';
     imageInfo.style.display = 'none';
 
-    // Сброс контейнера миниатюр
     if (thumbnailsContainer) {
         thumbnailsContainer.innerHTML = `
             <div class="text-center text-muted p-2">
@@ -537,14 +518,12 @@ function resetImage() {
         thumbnailsContainer.style.display = 'none';
     }
 
-    // Изменяем класс контейнера основного изображения
     const imagePreviewContainer = document.getElementById('imagePreviewContainer');
     if (imagePreviewContainer) {
         imagePreviewContainer.classList.remove('col-md-9');
         imagePreviewContainer.classList.add('col-12-mb-3');
     }
 
-    // 3. Сброс элементов управления
     filterCategory.selectedIndex = 0;
     filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
     filterParams.innerHTML = '';
@@ -558,7 +537,6 @@ function resetImage() {
     clearFiltersBtn.disabled = true;
     resetBtn.disabled = true;
 
-    // 4. Принудительная очистка кэша
     URL.revokeObjectURL(preview.src);
     document.querySelectorAll('.thumbnail img').forEach(img => {
         URL.revokeObjectURL(img.src);
@@ -574,7 +552,6 @@ async function downloadResult() {
         return;
     }
 
-    // Создание ссылки для скачивания
     const a = document.createElement('a');
     a.href = currentResultData;
     a.download = 'opencv_filters_result.jpg';
@@ -587,11 +564,9 @@ function toggleCompareMode() {
     compareMode = !compareMode;
 
     if (compareMode) {
-        // Включение режима сравнения
         preview.src = originalImageData;
         compareBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Показать результат';
     } else {
-        // Выключение режима сравнения
         preview.src = currentResultData;
         compareBtn.innerHTML = '<i class="fas fa-columns me-2"></i>Сравнить';
     }
@@ -599,66 +574,45 @@ function toggleCompareMode() {
 
 // Удаление фильтра из списка
 function removeFilter(index) {
-    // Проверяем, не редактируется ли этот фильтр
     if (applyFilterBtn.dataset.editIndex == index) {
         exitEditMode();
     }
 
-    // Удаление фильтра
     appliedFilters.splice(index, 1);
     uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
 
-    // Обновление списка
     updateAppliedFiltersList();
 
-    // Если фильтров не осталось, отключаем кнопки
     if (appliedFilters.length === 0) {
         downloadBtn.disabled = true;
         compareBtn.disabled = true;
         clearFiltersBtn.disabled = true;
 
-        // Возвращаем исходное изображение
         preview.src = originalImageData;
         currentResultData = originalImageData;
         uploadedImages[currentImageIndex].resultData = originalImageData;
 
         resetServerFilters();
     } else {
-        // Иначе применяем оставшиеся фильтры заново
         reapplyFilters();
     }
-
     updateArchiveButton();
 }
 
-// Функция для редактирования фильтра
 function editFilter(index) {
-    // Получаем данные фильтра
     const filter = appliedFilters[index];
 
-    // Обновляем заголовок секции
     filterSelectionTitle.textContent = `Редактирование фильтра: ${filter.name}`;
-
-    // Устанавливаем категорию и название фильтра в формах выбора
     filterCategory.value = filter.category;
-
-    // Обновляем список доступных фильтров в выбранной категории
     handleCategoryChange();
-
-    // Устанавливаем название фильтра
     filterName.value = filter.name;
-
-    // Создаем поля параметров
     handleFilterChange();
 
-    // Устанавливаем значения параметров
     if (filter.params) {
         filter.params.forEach(param => {
             const input = document.getElementById(`param_${param.name}`);
             if (input) {
                 input.value = param.value;
-
-                // Обновляем отображение значения для ползунков
                 if (input.type === 'range') {
                     const label = document.querySelector(`label[for="param_${param.name}"] span`);
                     if (label) {
@@ -669,30 +623,21 @@ function editFilter(index) {
         });
     }
 
-    // Изменяем текст кнопки
     applyFilterBtn.innerHTML = '<i class="fas fa-save me-2"></i>Сохранить изменения';
     applyFilterBtn.dataset.editIndex = index;
 
-    // Показываем кнопку отмены
     cancelEditBtn.style.display = 'block';
 
-    // Прокручиваем страницу к форме редактирования
     filterCategory.scrollIntoView({ behavior: 'smooth' });
 }
 
-// Функция для выхода из режима редактирования
 function exitEditMode() {
-    // Восстанавливаем заголовок
     filterSelectionTitle.textContent = 'Выбор фильтра';
 
-    // Восстанавливаем кнопку
     applyFilterBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Применить фильтр';
     delete applyFilterBtn.dataset.editIndex;
 
-    // Скрываем кнопку отмены
     cancelEditBtn.style.display = 'none';
-
-    // Очищаем форму
     filterCategory.selectedIndex = 0;
     filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
     filterName.disabled = true;
@@ -700,31 +645,26 @@ function exitEditMode() {
     applyFilterBtn.disabled = true;
 }
 
-// Функция для отмены редактирования
 function cancelEditing() {
     exitEditMode();
 }
 
 // Повторное применение всех фильтров
 async function reapplyFilters() {
-    // Отображение индикатора обработки
     processingContainer.style.display = 'block';
     processingText.textContent = `Обновление фильтров...`;
 
     await resetServerFilters();
 
     try {
-        // Начинаем с исходного изображения
         preview.src = originalImageData;
         currentResultData = originalImageData;
 
-        // Последовательно применяем все фильтры
         for (let i = 0; i < appliedFilters.length; i++) {
             const filter = appliedFilters[i];
 
             processingText.textContent = `Применение фильтра ${i+1} из ${appliedFilters.length}: ${filter.name}`;
 
-            // Отправка запроса на применение фильтра
             const response = await fetch(`/apply_filter/${currentImageId}`, {
                 method: 'POST',
                 headers: {
@@ -740,7 +680,6 @@ async function reapplyFilters() {
             const data = await response.json();
 
             if (data.success) {
-                // Обновление изображения
                 preview.src = data.image_data;
                 currentResultData = data.image_data;
                 uploadedImages[currentImageIndex].resultData = currentResultData;
@@ -750,24 +689,20 @@ async function reapplyFilters() {
             }
         }
 
-        // Обновляем список примененных фильтров
         updateAppliedFiltersList();
         updateThumbnailsContainer();
     } catch (error) {
         console.error('Ошибка при обновлении фильтров:', error);
         alert('Ошибка при обновлении фильтров');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
     }
 }
 
 // Обновление списка примененных фильтров
 function updateAppliedFiltersList() {
-    // Очистка списка
     appliedFiltersContainer.innerHTML = '';
 
-    // Если фильтров нет, отображаем сообщение
     if (appliedFilters.length === 0) {
         const message = document.createElement('p');
         message.className = 'text-muted text-center';
@@ -776,25 +711,21 @@ function updateAppliedFiltersList() {
         return;
     }
 
-    // Создаем контейнер для фильтров, если его еще нет
     let filterList = document.createElement('div');
     filterList.className = 'filter-list';
     appliedFiltersContainer.appendChild(filterList);
 
-    // Создание списка фильтров
     appliedFilters.forEach((filter, index) => {
         const filterItem = document.createElement('div');
         filterItem.className = 'badge bg-primary p-2 me-2 mb-2 d-inline-flex align-items-center';
         filterItem.setAttribute('data-index', index);
         filterItem.style.cursor = 'grab';
 
-        // Добавляем значок для перетаскивания
         const dragHandle = document.createElement('span');
         dragHandle.className = 'me-1';
         dragHandle.innerHTML = '<i class="fas fa-grip-lines-vertical"></i>';
         filterItem.appendChild(dragHandle);
 
-        // Название фильтра и его редактирование
         const nameSpan = document.createElement('span');
         nameSpan.className = 'filter-name';
         nameSpan.textContent = filter.name;
@@ -802,12 +733,11 @@ function updateAppliedFiltersList() {
         nameSpan.addEventListener('click', () => editFilter(index));
         filterItem.appendChild(nameSpan);
 
-        // Добавление кнопки удаления
         const removeBtn = document.createElement('span');
         removeBtn.className = 'ms-2 filter-action';
         removeBtn.innerHTML = '<i class="fas fa-times"></i>';
         removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Предотвращаем всплытие события
+            e.stopPropagation();
             removeFilter(index);
         });
 
@@ -815,7 +745,6 @@ function updateAppliedFiltersList() {
         filterList.appendChild(filterItem);
     });
 
-    // Инициализация Sortable для перетаскивания фильтров
     if (appliedFilters.length > 0) {
         if (sortableInstance) {
             sortableInstance.destroy();
@@ -825,19 +754,15 @@ function updateAppliedFiltersList() {
             animation: 150,
             ghostClass: 'bg-secondary',
             onEnd: function(evt) {
-                // Получаем новый индекс после перетаскивания
                 const oldIndex = evt.oldIndex;
                 const newIndex = evt.newIndex;
 
-                // Перемещаем фильтр в массиве
                 if (oldIndex !== newIndex) {
                     const filterToMove = appliedFilters.splice(oldIndex, 1)[0];
                     appliedFilters.splice(newIndex, 0, filterToMove);
 
-                    // Обновляем фильтры в массиве uploadedImages
                     uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
 
-                    // Применяем фильтры заново
                     reapplyFilters();
                 }
             }
@@ -845,23 +770,19 @@ function updateAppliedFiltersList() {
     }
 }
 
-// Предотвращение действий по умолчанию для событий drag-and-drop
 function preventDefaults(e) {
     e.preventDefault();
     e.stopPropagation();
 }
 
-// Подсветка области при перетаскивании
 function highlight() {
     dropArea.classList.add('highlight');
 }
 
-// Снятие подсветки области
 function unhighlight() {
     dropArea.classList.remove('highlight');
 }
 
-// Обработка сброса файла в область загрузки
 function handleDrop(e) {
     const dt = e.dataTransfer;
     const files = dt.files;
@@ -871,7 +792,6 @@ function handleDrop(e) {
     }
 }
 
-// Обработка выбора файла через диалоговое окно
 function handleFileSelect(e) {
     console.log('handleFileSelect вызван', e);
     const files = e.target.files;
@@ -943,7 +863,6 @@ async function handleFiles(files) {
     }
 
     if (thumbnailsContainer) {
-        // Показываем/скрываем контейнер миниатюр в зависимости от количества загруженных изображений
         thumbnailsContainer.style.display = uploadedImages.length >= 2 ? 'block' : 'none';
     }
 
@@ -964,7 +883,6 @@ async function handleFiles(files) {
         filterCategory.disabled = false;
         resetBtn.disabled = false;
 
-        // Активируем кнопки управления, если есть примененные фильтры
         downloadBtn.disabled = appliedFilters.length === 0;
         compareBtn.disabled = appliedFilters.length === 0;
         clearFiltersBtn.disabled = appliedFilters.length === 0;
@@ -982,11 +900,9 @@ async function handleFiles(files) {
 function handleCategoryChange() {
     const category = filterCategory.value;
 
-    // Очистка списка фильтров
     filterName.innerHTML = '<option value="">Выберите фильтр...</option>';
 
     if (category) {
-        // Заполнение списка фильтров выбранной категории
         const filters = allFilters[category] || [];
         filters.forEach(filter => {
             const option = document.createElement('option');
@@ -995,20 +911,12 @@ function handleCategoryChange() {
             filterName.appendChild(option);
         });
 
-        // Включение списка фильтров
         filterName.disabled = false;
     } else {
-        // Отключение списка фильтров
         filterName.disabled = true;
-
-        // Очистка параметров
         filterParams.innerHTML = '';
-
-        // Отключение кнопки применения
         applyFilterBtn.disabled = true;
     }
-
-    // Очистка параметров
     filterParams.innerHTML = '';
 }
 
@@ -1017,24 +925,18 @@ function handleFilterChange() {
     const filter = filterName.value;
     const category = filterCategory.value;
 
-    // Очистка параметров
     filterParams.innerHTML = '';
 
     if (filter && category) {
-        // Создание полей для параметров в зависимости от выбранного фильтра
         createFilterParamsFields(category, filter);
-
-        // Включение кнопки применения
         applyFilterBtn.disabled = false;
     } else {
-        // Отключение кнопки применения
         applyFilterBtn.disabled = true;
     }
 }
 
 // Создание полей для параметров фильтра
 function createFilterParamsFields(category, filter) {
-    // Набор параметров зависит от выбранного фильтра и категории
     let params = [];
 
     // Размытие и сглаживание
@@ -1221,7 +1123,6 @@ function createFilterParamsFields(category, filter) {
         }
     }
 
-    // Создание полей для параметров
     params.forEach(param => {
         const container = document.createElement('div');
         container.className = 'mb-3';
@@ -1279,7 +1180,6 @@ function createFilterParamsFields(category, filter) {
         filterParams.appendChild(container);
     });
 
-    // Если параметров нет, сообщаем об этом
     if (params.length === 0) {
         const message = document.createElement('p');
         message.className = 'text-muted';
@@ -1290,13 +1190,10 @@ function createFilterParamsFields(category, filter) {
 
 // Применение фильтра
 async function applyFilter() {
-    // Проверка наличия изображения
     if (!currentImageId) {
         alert('Сначала загрузите изображение');
         return;
     }
-
-    // Получение выбранных значений
     const category = filterCategory.value;
     const filterSelected = filterName.value;
 
@@ -1304,15 +1201,12 @@ async function applyFilter() {
         alert('Выберите категорию и фильтр');
         return;
     }
-
-    // Сбор параметров фильтра
     const params = [];
     const paramElements = filterParams.querySelectorAll('input, select');
 
     paramElements.forEach(element => {
         let value = element.value;
 
-        // Преобразование значения в зависимости от типа
         if (element.type === 'number' || element.type === 'range') {
             value = parseFloat(value);
         }
@@ -1323,21 +1217,17 @@ async function applyFilter() {
         });
     });
 
-    // Проверяем, редактируется ли существующий фильтр
     const editIndex = applyFilterBtn.dataset.editIndex;
     const isEditing = editIndex !== undefined;
 
-    // Отображение индикатора обработки
     processingContainer.style.display = 'block';
     processingText.textContent = isEditing ?
         `Обновление фильтра: ${filterSelected}` :
         `Применение фильтра: ${filterSelected}`;
 
-    // Отключение кнопок на время обработки
     applyFilterBtn.disabled = true;
 
     try {
-        // Если редактируем фильтр, обновляем его в массиве
         if (isEditing) {
             appliedFilters[editIndex] = {
                 category: category,
@@ -1345,19 +1235,13 @@ async function applyFilter() {
                 params: params
             };
 
-            // Обновляем фильтры в массиве uploadedImages
             uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
-
-            // После обновления применяем все фильтры заново в правильном порядке
             await reapplyFilters();
-
-            // Сбрасываем режим редактирования
             exitEditMode();
 
             console.log('Фильтр успешно обновлен:', filterSelected);
         } else {
-            // Добавление нового фильтра
-            // Отправка запроса на применение фильтра
+
             const response = await fetch(`/apply_filter/${currentImageId}`, {
                 method: 'POST',
                 headers: {
@@ -1373,29 +1257,23 @@ async function applyFilter() {
             const data = await response.json();
 
             if (data.success) {
-                // Обновление изображения
                 preview.src = data.image_data;
                 preview.classList.add('fade-in');
 
-                // Сохранение результата
                 currentResultData = data.image_data;
 
-                // Добавление фильтра в список примененных
                 appliedFilters.push({
                     category: category,
                     name: filterSelected,
                     params: params
                 });
 
-                // Сохраняем измененные фильтры в массиве uploadedImages
                 uploadedImages[currentImageIndex].appliedFilters = [...appliedFilters];
                 uploadedImages[currentImageIndex].resultData = currentResultData;
 
-                // Обновление списка примененных фильтров
                 updateAppliedFiltersList();
                 updateThumbnailsContainer();
 
-                // Включение кнопок
                 downloadBtn.disabled = false;
                 compareBtn.disabled = false;
                 clearFiltersBtn.disabled = false;
@@ -1407,7 +1285,6 @@ async function applyFilter() {
             }
         }
 
-        // Сбрасываем форму после добавления фильтра
         if (!isEditing) {
             filterParams.innerHTML = '';
             filterName.selectedIndex = 0;
@@ -1416,10 +1293,8 @@ async function applyFilter() {
         console.error('Ошибка при применении фильтра:', error);
         alert('Ошибка при применении фильтра');
     } finally {
-        // Скрытие индикатора обработки
         processingContainer.style.display = 'none';
 
-        // Включение кнопки применения
         applyFilterBtn.disabled = false;
     }
 }
@@ -1427,19 +1302,13 @@ async function applyFilter() {
 function updateArchiveButton() {
     const hasMultipleImages = uploadedImages.length > 1;
 
-    // Проверяем, есть ли хотя бы одно изображение с примененными фильтрами
     const hasProcessedImages = uploadedImages.some(img =>
         img.appliedFilters && img.appliedFilters.length > 0
     );
 
-    // Показываем кнопку если есть несколько изображений
-    // Наличие фильтров больше не обязательно, так как мы можем архивировать и необработанные изображения
     const shouldShow = hasMultipleImages;
-
-    // Обновление стиля
     archiveBtn.style.display = shouldShow ? "block" : "none";
 
-    // Обновление текста с информацией об обработанных изображениях
     if (shouldShow) {
         if (hasProcessedImages) {
             archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов, есть обработанные)`;
@@ -1454,29 +1323,20 @@ function switchToImage(index) {
         return;
     }
 
-    // Если текущее изображение, нет необходимости переключаться
     if (currentImageIndex === index) return;
 
-    // Сохраняем текущий индекс
     currentImageIndex = index;
     const selectedImage = uploadedImages[index];
 
-    // Обновляем глобальные переменные
     currentImageId = selectedImage.id;
     originalImageData = selectedImage.originalData;
     currentResultData = selectedImage.resultData || selectedImage.originalData;
 
-    // Обновляем список примененных фильтров для нового изображения
     appliedFilters = selectedImage.appliedFilters || [];
-
-    // Обновляем большое изображение
     preview.src = currentResultData;
-
-    // Обновляем информацию об изображении
     imageInfo.textContent = `Размер: ${selectedImage.width}x${selectedImage.height} | Файл: ${selectedImage.fileName}`;
     imageInfo.style.display = 'block';
 
-    // Обновляем выделение миниатюры
     const thumbnails = document.querySelectorAll('.thumbnail');
     thumbnails.forEach((thumb, idx) => {
         if (idx === index) {
@@ -1486,10 +1346,7 @@ function switchToImage(index) {
         }
     });
 
-    // Обновляем список примененных фильтров в UI
     updateAppliedFiltersList();
-
-    // Активируем/деактивируем кнопки в зависимости от наличия фильтров
     downloadBtn.disabled = appliedFilters.length === 0;
     compareBtn.disabled = appliedFilters.length === 0;
     clearFiltersBtn.disabled = appliedFilters.length === 0;
@@ -1498,40 +1355,28 @@ function switchToImage(index) {
 function updateThumbnailsContainer() {
     if (!thumbnailsContainer) return;
 
-    // Получаем контейнер с основным изображением
     const imagePreviewContainer = document.getElementById('imagePreviewContainer');
     const previewParent = imagePreviewContainer ? imagePreviewContainer.parentElement : null;
 
-    // Управляем видимостью контейнера миниатюр
     if (uploadedImages.length < 2) {
-        // Скрываем миниатюры когда меньше 2-х изображений
         thumbnailsContainer.style.display = 'none';
-
-        // Расширяем контейнер основного изображения на всю ширину
         if (previewParent) {
             previewParent.classList.remove('col-md-9');
             previewParent.classList.add('col-12');
         }
     } else {
-        // Показываем миниатюры
         thumbnailsContainer.style.display = 'block';
 
-        // Возвращаем стандартную ширину
         if (previewParent) {
             previewParent.classList.remove('col-12');
             previewParent.classList.add('col-md-9');
         }
-
-        // Очищаем и заполняем контейнер миниатюр
         thumbnailsContainer.innerHTML = '';
-
-        // Добавляем миниатюры для каждого изображения
         uploadedImages.forEach((image, index) => {
             const thumbnailDiv = document.createElement('div');
             thumbnailDiv.className = `thumbnail ${index === currentImageIndex ? 'active' : ''}`;
             thumbnailDiv.style.position = 'relative';
 
-            // Используем оригинальные или обработанные данные для миниатюры
             const thumbnailSrc = image.resultData || image.originalData;
 
             thumbnailDiv.innerHTML = `
@@ -1545,7 +1390,6 @@ function updateThumbnailsContainer() {
                 </button>
             `;
 
-            // Обработчики событий
             thumbnailDiv.querySelector('.delete-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 deleteImage(index);
@@ -1564,29 +1408,20 @@ async function deleteImage(index) {
     const imageId = uploadedImages[index].id;
 
     try {
-        // Удаление на сервере
         await fetch(`/images/${imageId}`, { method: 'DELETE' });
 
-        // Удаление из локального массива
         uploadedImages.splice(index, 1);
 
-        // Обновление текущего индекса если нужно
         if (uploadedImages.length > 0) {
             if (currentImageIndex >= uploadedImages.length) {
                 currentImageIndex = uploadedImages.length - 1;
             }
-
-            // Обновляем текущее изображение
             switchToImage(currentImageIndex);
         } else {
-            // Если не осталось изображений, сбрасываем состояние UI
             resetUIState();
         }
 
-        // Обновление интерфейса миниатюр
         updateThumbnailsContainer();
-
-        // Обновление видимости кнопки архива
         updateArchiveButton();
 
     } catch (error) {
@@ -1621,24 +1456,18 @@ async function handleArchiveDownload() {
         processingContainer.style.display = 'block';
         processingText.textContent = 'Подготовка архива...';
 
-        // Получаем только ID всех загруженных изображений
-        // Нам больше не нужно передавать фильтры, так как будут использоваться
-        // уже обработанные изображения с сервера
         const imageIds = uploadedImages.map(img => img.id);
-
         const response = await fetch('/create_archive', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 image_ids: imageIds,
-                filters: [] // Пустой массив, т.к. фильтры нам уже не нужны
+                filters: []
             })
         });
 
         const data = await response.json();
-
         if (data.success) {
-            // Скачивание архива
             window.location.href = data.download_url;
         } else {
             alert('Ошибка: ' + (data.detail || 'Не удалось создать архив'));

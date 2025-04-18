@@ -995,11 +995,9 @@ async def create_archive_endpoint(
         session_id: str = Depends(get_session_id)
 ):
     try:
-        # Проверка минимальных требований - только проверяем наличие изображений
         if len(request.image_ids) < 2:
             raise HTTPException(status_code=400, detail="Need at least 2 images")
 
-        # Создание архива
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zip_file:
             for img_id in request.image_ids:
@@ -1007,30 +1005,22 @@ async def create_archive_endpoint(
                     logger.warning(f"Изображение {img_id} не найдено при создании архива")
                     continue
 
-                # Получаем оригинальное изображение
                 original_img = images_store[img_id].copy()
 
-                # Для обработанного изображения ищем результат с самым длинным именем
-                # (последний результат обработки) или используем оригинал
                 processed_img_key = img_id
                 for key in images_store.keys():
                     if key.startswith(f"{img_id}_") and len(key) > len(processed_img_key):
                         processed_img_key = key
 
-                # Используем найденное обработанное изображение или оригинал, если обработки не было
                 processed_img = images_store[processed_img_key].copy()
 
-                # Если ключи совпадают, значит обработки не было, и мы используем оригинал
                 has_filters = processed_img_key != img_id
 
-                # Конвертация в bytes
                 _, original_encoded = cv2.imencode(".jpg", original_img)
                 _, processed_encoded = cv2.imencode(".jpg", processed_img)
 
-                # Добавляем оригинал и обработанное изображение в архив
                 zip_file.writestr(f"original_{img_id}.jpg", original_encoded.tobytes())
 
-                # Если обработки не было, сохраняем копию оригинала
                 if has_filters:
                     zip_file.writestr(f"processed_{img_id}.jpg", processed_encoded.tobytes())
                 else:
@@ -1040,12 +1030,10 @@ async def create_archive_endpoint(
         zip_buffer.seek(0)
         archive_name = f"processed_{int(time.time())}.zip"
 
-        # Сохранение архива
         archive_path = os.path.join(ARCHIVE_DIR, archive_name)
         with open(archive_path, "wb") as f:
             f.write(zip_buffer.getvalue())
 
-        # Логируем успешное создание архива
         await stats_db.log_app_event(
             "archive_created",
             session_id,
@@ -1060,7 +1048,6 @@ async def create_archive_endpoint(
 
     except Exception as e:
         logger.error(f"Archive error: {str(e)}")
-        # Логируем ошибку создания архива
         await stats_db.log_app_event(
             "archive_error",
             session_id,
@@ -1079,7 +1066,6 @@ async def download_archive(
         archive_path = os.path.join(ARCHIVE_DIR, archive_name)
 
         if not os.path.exists(archive_path):
-            # Логируем ошибку - архив не найден
             await stats_db.log_app_event(
                 "archive_not_found",
                 session_id,
@@ -1087,14 +1073,12 @@ async def download_archive(
             )
             raise HTTPException(status_code=404, detail="Архив не найден")
 
-        # Логируем скачивание
         await stats_db.log_app_event(
             "archive_download",
             session_id,
             f"Скачивание архива {archive_name}"
         )
 
-        # Дополнительное логирование статистики
         archive_size = os.path.getsize(archive_path) / 1024  # размер в КБ
         await stats_db.log_app_event(
             "archive_download_details",
@@ -1129,25 +1113,21 @@ async def reset_filters(
     Сбрасывает фильтры, примененные к изображению, удаляя промежуточные результаты.
     """
     try:
-        # Проверяем существование исходного изображения
         if image_id not in images_store:
             return JSONResponse({
                 "success": False,
                 "message": "Исходное изображение не найдено"
             })
 
-        # Удаляем все промежуточные результаты
         keys_to_delete = [key for key in images_store if key.startswith(f"{image_id}_")]
 
         for key in keys_to_delete:
             del images_store[key]
 
-            # Удаляем и соответствующие файлы
             file_path = os.path.join(RESULT_DIR, f"{key}.jpg")
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-        # Логируем сброс фильтров
         await stats_db.log_app_event(
             "filters_reset",
             session_id,
@@ -1161,7 +1141,6 @@ async def reset_filters(
 
     except Exception as e:
         logger.error(f"Ошибка при сбросе фильтров для {image_id}: {e}")
-        # Логируем ошибку
         await stats_db.log_app_event(
             "filters_reset_error",
             session_id,

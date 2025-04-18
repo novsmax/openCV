@@ -142,6 +142,7 @@ function setupEventListeners() {
     compareBtn.addEventListener('click', toggleCompareMode);
     clearFiltersBtn.addEventListener('click', clearAllFilters);
     archiveBtn.addEventListener('click', handleArchiveDownload);
+    applyFilterBtn.addEventListener('click', applyFilter);
 
     const presetsDropdown = document.getElementById('presetsDropdown');
     const applyPresetBtn = document.getElementById('applyPresetBtn');
@@ -153,6 +154,29 @@ function setupEventListeners() {
     const presetHeader = document.getElementById('presetHeader');
     const presetBody = document.getElementById('presetBody');
     const presetToggleIcon = document.getElementById('presetToggleIcon');
+    const applyFilterToAllBtn = document.getElementById('applyFilterToAllBtn');
+
+    if (applyFilterToAllBtn) {
+        applyFilterToAllBtn.addEventListener('click', applyFilterToAll);
+    }
+
+    // Также нужно обновить выпадающее меню при изменении состояния кнопки применения фильтра
+    const applyFilterDropdown = document.getElementById('applyFilterDropdown');
+    if (applyFilterDropdown) {
+        // Синхронизация состояний основной кнопки и выпадающего меню
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === 'disabled') {
+                    applyFilterDropdown.disabled = applyFilterBtn.disabled;
+                }
+            });
+        });
+
+        observer.observe(applyFilterBtn, { attributes: true });
+    }
+
+    cancelEditBtn.addEventListener('click', cancelEditing);
+    resetBtn.addEventListener('click', resetImage);
 
     if (presetHeader && presetBody) {
         presetHeader.addEventListener('click', function() {
@@ -632,17 +656,30 @@ function editFilter(index) {
 }
 
 function exitEditMode() {
+    // Восстанавливаем заголовок
     filterSelectionTitle.textContent = 'Выбор фильтра';
 
+    // Восстанавливаем кнопку
     applyFilterBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Применить фильтр';
     delete applyFilterBtn.dataset.editIndex;
 
+    // Скрываем кнопку отмены
     cancelEditBtn.style.display = 'none';
+
+    // Очищаем форму
     filterCategory.selectedIndex = 0;
     filterName.innerHTML = '<option value="">Сначала выберите категорию...</option>';
     filterName.disabled = true;
     filterParams.innerHTML = '';
+
+    // Отключаем кнопку применения и выпадающее меню
     applyFilterBtn.disabled = true;
+
+    // Отключаем выпадающее меню, если оно существует
+    const applyFilterDropdown = document.getElementById('applyFilterDropdown');
+    if (applyFilterDropdown) {
+        applyFilterDropdown.disabled = true;
+    }
 }
 
 function cancelEditing() {
@@ -925,13 +962,30 @@ function handleFilterChange() {
     const filter = filterName.value;
     const category = filterCategory.value;
 
+    // Очистка параметров
     filterParams.innerHTML = '';
 
     if (filter && category) {
+        // Создание полей для параметров в зависимости от выбранного фильтра
         createFilterParamsFields(category, filter);
+
+        // Включение кнопки применения и выпадающего меню
         applyFilterBtn.disabled = false;
+
+        // Включаем выпадающее меню, если оно существует
+        const applyFilterDropdown = document.getElementById('applyFilterDropdown');
+        if (applyFilterDropdown) {
+            applyFilterDropdown.disabled = false;
+        }
     } else {
+        // Отключение кнопки применения и выпадающего меню
         applyFilterBtn.disabled = true;
+
+        // Отключаем выпадающее меню, если оно существует
+        const applyFilterDropdown = document.getElementById('applyFilterDropdown');
+        if (applyFilterDropdown) {
+            applyFilterDropdown.disabled = true;
+        }
     }
 }
 
@@ -1311,7 +1365,7 @@ function updateArchiveButton() {
 
     if (shouldShow) {
         if (hasProcessedImages) {
-            archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов, есть обработанные)`;
+            archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив. Файлов: (${uploadedImages.length}, есть обработанные)`;
         } else {
             archiveBtn.innerHTML = `<i class="fas fa-file-archive me-2"></i>Скачать архив (${uploadedImages.length} файлов)`;
         }
@@ -1478,4 +1532,148 @@ async function handleArchiveDownload() {
     } finally {
         processingContainer.style.display = 'none';
     }
+}
+
+
+// Функция для применения текущего фильтра ко всем изображениям
+async function applyFilterToAll() {
+    // Проверяем, выбран ли фильтр
+    const category = filterCategory.value;
+    const filterSelected = filterName.value;
+
+    if (!category || !filterSelected) {
+        alert('Выберите категорию и фильтр для применения ко всем изображениям');
+        return;
+    }
+
+    // Если изображений нет, показываем сообщение
+    if (uploadedImages.length === 0) {
+        alert('Нет загруженных изображений');
+        return;
+    }
+
+    // Запрашиваем подтверждение
+    if (!confirm(`Вы уверены, что хотите применить фильтр "${filterSelected}" ко всем изображениям?`)) {
+        return;
+    }
+
+    // Сбор параметров фильтра
+    const params = [];
+    const paramElements = filterParams.querySelectorAll('input, select');
+
+    paramElements.forEach(element => {
+        let value = element.value;
+
+        // Преобразование значения в зависимости от типа
+        if (element.type === 'number' || element.type === 'range') {
+            value = parseFloat(value);
+        }
+
+        params.push({
+            name: element.name,
+            value: value
+        });
+    });
+
+    // Отображаем прогресс-бар для пакетной обработки
+    processingContainer.style.display = 'block';
+    batchProgressBar.style.display = 'block';
+    batchProgress.style.display = 'block';
+    totalImagesEl.textContent = uploadedImages.length;
+    processedCountEl.textContent = '0';
+    batchProgressBar.querySelector('.progress-bar').style.width = '0%';
+
+    // Сохраняем текущий индекс
+    const originalIndex = currentImageIndex;
+
+    try {
+        // Применяем фильтр к каждому изображению
+        for (let i = 0; i < uploadedImages.length; i++) {
+            // Обновляем прогресс
+            processedCountEl.textContent = i + 1;
+            batchProgressBar.querySelector('.progress-bar').style.width = `${((i + 1) / uploadedImages.length) * 100}%`;
+            processingText.textContent = `Обработка изображения ${i + 1} из ${uploadedImages.length}...`;
+
+            // Переключаемся на текущее изображение
+            await switchToImageForProcessing(i);
+
+            // Применяем фильтр
+            const response = await fetch(`/apply_filter/${uploadedImages[i].id}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filter_name: filterSelected,
+                    filter_category: category,
+                    params: params
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Сохраняем результат
+                uploadedImages[i].resultData = data.image_data;
+
+                // Добавляем фильтр в список примененных для этого изображения
+                const newFilter = {
+                    category: category,
+                    name: filterSelected,
+                    params: [...params]  // Создаем копию параметров
+                };
+
+                if (!uploadedImages[i].appliedFilters) {
+                    uploadedImages[i].appliedFilters = [];
+                }
+
+                uploadedImages[i].appliedFilters.push(newFilter);
+            } else {
+                console.error(`Ошибка при применении фильтра к изображению ${i}:`, data.message);
+            }
+        }
+
+        // Возвращаемся к исходному изображению
+        await switchToImageForProcessing(originalIndex);
+
+        // Обновляем интерфейс
+        updateThumbnailsContainer();
+        updateAppliedFiltersList();
+        updateArchiveButton();
+
+        // Включаем кнопки
+        downloadBtn.disabled = false;
+        compareBtn.disabled = false;
+        clearFiltersBtn.disabled = false;
+
+        alert(`Фильтр "${filterSelected}" успешно применен ко всем ${uploadedImages.length} изображениям`);
+    } catch (error) {
+        console.error('Ошибка при применении фильтра ко всем изображениям:', error);
+        alert('Произошла ошибка при применении фильтра ко всем изображениям');
+    } finally {
+        // Скрываем прогресс-бар
+        processingContainer.style.display = 'none';
+        batchProgressBar.style.display = 'none';
+        batchProgress.style.display = 'none';
+    }
+}
+
+// Вспомогательная функция для переключения между изображениями при пакетной обработке
+// Отличается от switchToImage тем, что не обновляет интерфейс
+async function switchToImageForProcessing(index) {
+    if (index < 0 || index >= uploadedImages.length) {
+        return;
+    }
+
+    // Сохраняем текущий индекс
+    currentImageIndex = index;
+    const selectedImage = uploadedImages[index];
+
+    // Обновляем глобальные переменные
+    currentImageId = selectedImage.id;
+    originalImageData = selectedImage.originalData;
+    currentResultData = selectedImage.resultData || selectedImage.originalData;
+
+    // Обновляем список примененных фильтров для нового изображения
+    appliedFilters = selectedImage.appliedFilters || [];
 }

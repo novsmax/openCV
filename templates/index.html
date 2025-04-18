@@ -16,6 +16,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- FileSaver для сохранения архивов -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+    .btn-group.w-100 {
+        gap: 0;
+        flex-wrap: wrap;
+    }
+    </style>
 </head>
 <body>
     <!-- Навигационная панель -->
@@ -95,9 +101,17 @@
                         <div id="filterParams" class="mb-3">
                             <!-- Динамически заполняется параметрами выбранного фильтра -->
                         </div>
-                        <button id="applyFilterBtn" class="btn btn-success w-100" disabled>
-                            <i class="fas fa-magic me-2"></i>Применить фильтр
-                        </button>
+                        <div class="btn-group w-100">
+                            <button id="applyFilterBtn" class="btn btn-success" disabled>
+                                <i class="fas fa-magic me-2"></i>Применить фильтр
+                            </button>
+                            <button type="button" class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" id="applyFilterDropdown" disabled>
+                                <span class="visually-hidden">Toggle Dropdown</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" id="applyFilterToAllBtn">Применить для всех изображений</a></li>
+                            </ul>
+                        </div>
                         <button id="cancelEditBtn" class="btn btn-outline-secondary w-100 mt-2" style="display: none;">
                             <i class="fas fa-times me-2"></i>Отменить редактирование
                         </button>

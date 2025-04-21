@@ -148,43 +148,20 @@
             </div>
         </div>
 
-        <div class="row">
+
             <!-- Популярные пресеты -->
-            <div class="col-md-6 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Популярные пресеты</h5>
-                    </div>
-                    <div class="card-body">
-                        <ul class="list-group list-group-flush bg-transparent">
-                            {% for preset in app_stats.top_presets %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent">
-                                {{ preset.preset_name }}
-                                <span class="badge bg-primary rounded-pill">{{ preset.usage_count }}</span>
-                            </li>
-                            {% endfor %}
-                            {% if not app_stats.top_presets or app_stats.top_presets|length == 0 %}
-                            <li class="list-group-item bg-transparent text-center">
-                                Нет данных о пресетах
-                            </li>
-                            {% endif %}
-                        </ul>
-                    </div>
-                </div>
-            </div>
+
 
             <!-- Эффективность пресетов -->
-            <div class="col-md-6 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0">Эффективность пресетов</h5>
-                    </div>
-                    <div class="card-body">
-                        <canvas id="presetEfficiencyChart"></canvas>
-                    </div>
-                </div>
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Эффективность пресетов</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="presetEfficiencyChart"></canvas>
             </div>
         </div>
+
 
         <!-- Таблица использования фильтров -->
         <div class="card mb-4">
